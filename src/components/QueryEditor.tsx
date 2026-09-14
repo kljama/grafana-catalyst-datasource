@@ -40,9 +40,14 @@ const STATUS_OPTIONS: Array<SelectableValue<CatalystIssueStatus>> = [
 ];
 
 const siteHealthMetricOptions: Array<SelectableValue<string>> = [
-  { label: 'Client Count', value: 'clientCount' },
+  { label: 'Client Count (Total)', value: 'clientCount' },
+  { label: 'Total Clients (numberOfClients)', value: 'numberOfClients' },
+  { label: 'Connected Wired Clients (numberOfWiredClients)', value: 'numberOfWiredClients' },
   { label: 'Total Connected Wired Clients', value: 'totalNumberOfConnectedWiredClients' },
+  { label: 'Active Wireless Clients (numberOfWirelessClients)', value: 'numberOfWirelessClients' },
   { label: 'Total Active Wireless Clients', value: 'totalNumberOfActiveWirelessClients' },
+  { label: 'Wired Clients (Good)', value: 'wiredGoodClients' },
+  { label: 'Wireless Clients (Good)', value: 'wirelessGoodClients' },
   { label: 'Healthy Network Device %', value: 'healthyNetworkDevicePercentage' },
   { label: 'Healthy Clients %', value: 'healthyClientsPercentage' },
   { label: 'Wired Client Health', value: 'clientHealthWired' },

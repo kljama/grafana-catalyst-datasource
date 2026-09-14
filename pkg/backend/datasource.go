@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -203,34 +204,179 @@ func (d *Datasource) querySiteHealth(ctx context.Context, inst *dsInstance, qm Q
 	prefix := dnacPrefix(siteHealthURL.Path)
 	siteHealthURL.Path = prefix + "/dna/intent/api/v1/site-health"
 
-	// Use the Client to fetch all site health data
 	client := NewClient(httpClient, d.tm, inst)
-	allSiteHealthData, err := client.FetchAllSiteHealth(ctx, siteHealthURL, qm)
-	if err != nil {
-		return nil, err
+	var allSiteHealthData []map[string]any
+
+	siteType := strings.TrimSpace(qm.SiteType)
+	if siteType != "" {
+		qmSite := qm
+		qmSite.SiteType = siteType
+		data, err := client.FetchAllSiteHealth(ctx, siteHealthURL, qmSite)
+		if err != nil {
+			return nil, err
+		}
+		allSiteHealthData = data
+	} else {
+		// When siteType is not specified, Catalyst Center API defaults to AREA only.
+		// To ensure both areas and buildings (like child buildings under a city/area) are retrieved,
+		// we fetch both AREA and BUILDING.
+		qmArea := qm
+		qmArea.SiteType = "AREA"
+		areas, err := client.FetchAllSiteHealth(ctx, siteHealthURL, qmArea)
+		if err != nil {
+			log.DefaultLogger.Warn("Failed to fetch area site health", "err", err)
+		}
+
+		qmBuilding := qm
+		qmBuilding.SiteType = "BUILDING"
+		buildings, err := client.FetchAllSiteHealth(ctx, siteHealthURL, qmBuilding)
+		if err != nil {
+			log.DefaultLogger.Warn("Failed to fetch building site health", "err", err)
+		}
+
+		seen := make(map[string]struct{})
+		for _, item := range append(areas, buildings...) {
+			id, _ := item["siteId"].(string)
+			id = strings.TrimSpace(id)
+			if id != "" {
+				lowerID := strings.ToLower(id)
+				if _, exists := seen[lowerID]; exists {
+					continue
+				}
+				seen[lowerID] = struct{}{}
+			}
+			allSiteHealthData = append(allSiteHealthData, item)
+		}
 	}
 
-	// If user selected specific sites, filter the results now.
-	if len(qm.SiteID) > 0 {
-		siteIDSet := make(map[string]struct{})
-		for _, id := range qm.SiteID {
-			siteIDSet[id] = struct{}{}
-		}
+	// Filter data based on user selections: siteId, siteName, parentSiteId, parentSiteName
+	allSiteHealthData = filterSiteHealthData(allSiteHealthData, qm)
 
-		var filteredData []map[string]any
-		for _, siteData := range allSiteHealthData {
-			if id, ok := siteData["siteId"].(string); ok {
-				if _, exists := siteIDSet[id]; exists {
-					filteredData = append(filteredData, siteData)
-				}
-			}
+	if len(allSiteHealthData) > 0 {
+		var sampleKeys []string
+		for k := range allSiteHealthData[0] {
+			sampleKeys = append(sampleKeys, k)
 		}
-		allSiteHealthData = filteredData
+		sort.Strings(sampleKeys)
+		log.DefaultLogger.Debug("Site health sample record keys", "count", len(allSiteHealthData), "keys", sampleKeys, "sampleSite", allSiteHealthData[0]["siteName"])
 	}
 
 	// Transform API response into Grafana data.Frame
 	frame := SiteHealthResponseToDataFrame(allSiteHealthData, refID, qm.Metrics)
 	return frame, nil
+}
+
+// hasNonEmptyStrings checks if a slice contains at least one non-blank string.
+func hasNonEmptyStrings(slice []string) bool {
+	for _, s := range slice {
+		if strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// filterSiteHealthData filters the site health results based on siteId, siteName,
+// parentSiteId, and parentSiteName filters from the query model.
+func filterSiteHealthData(allSiteHealthData []map[string]any, qm QueryModel) []map[string]any {
+	hasSiteFilter := hasNonEmptyStrings(qm.SiteID) || hasNonEmptyStrings(qm.SiteName)
+	hasParentFilter := strings.TrimSpace(qm.ParentSiteID) != "" || strings.TrimSpace(qm.ParentSiteName) != ""
+
+	if !hasSiteFilter && !hasParentFilter {
+		return allSiteHealthData
+	}
+
+	var filteredData []map[string]any
+	for _, siteData := range allSiteHealthData {
+		if hasSiteFilter && !siteMatchesQuery(siteData, qm.SiteID, qm.SiteName) {
+			continue
+		}
+		if hasParentFilter {
+			parentIDVal, _ := siteData["parentSiteId"].(string)
+			parentNameVal, _ := siteData["parentSiteName"].(string)
+			matchedParent := false
+			if qm.ParentSiteID != "" && strings.EqualFold(strings.TrimSpace(parentIDVal), strings.TrimSpace(qm.ParentSiteID)) {
+				matchedParent = true
+			}
+			if qm.ParentSiteName != "" && matchSiteNameOrHierarchy(parentNameVal, qm.ParentSiteName) {
+				matchedParent = true
+			}
+			if !matchedParent {
+				continue
+			}
+		}
+		filteredData = append(filteredData, siteData)
+	}
+	return filteredData
+}
+
+// siteMatchesQuery checks if a site health record matches the requested site IDs or site names.
+// It supports case-insensitive comparison, hierarchy paths, and parent site relationships.
+func siteMatchesQuery(siteData map[string]any, siteIDs []string, siteNames []string) bool {
+	idVal, _ := siteData["siteId"].(string)
+	nameVal, _ := siteData["siteName"].(string)
+	parentIDVal, _ := siteData["parentSiteId"].(string)
+	parentNameVal, _ := siteData["parentSiteName"].(string)
+
+	trimmedID := strings.TrimSpace(idVal)
+	trimmedParentID := strings.TrimSpace(parentIDVal)
+
+	for _, targetID := range siteIDs {
+		targetID = strings.TrimSpace(targetID)
+		if targetID == "" {
+			continue
+		}
+		if strings.EqualFold(trimmedID, targetID) || strings.EqualFold(trimmedParentID, targetID) {
+			return true
+		}
+	}
+
+	for _, targetName := range siteNames {
+		targetName = strings.TrimSpace(targetName)
+		if targetName == "" {
+			continue
+		}
+		if matchSiteNameOrHierarchy(nameVal, targetName) || matchSiteNameOrHierarchy(parentNameVal, targetName) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchSiteNameOrHierarchy checks if a site name matches target directly or as any segment in a hierarchy path.
+// e.g., "Global/Österreich/Wien" matches "Wien", "Österreich", or "Global".
+// It also handles leading/trailing whitespace (e.g. " All Sites") and subpaths (e.g. "Österreich/Wien").
+func matchSiteNameOrHierarchy(fullName, target string) bool {
+	fullName = strings.TrimSpace(fullName)
+	target = strings.TrimSpace(target)
+	if fullName == "" || target == "" {
+		return false
+	}
+	if strings.EqualFold(fullName, target) {
+		return true
+	}
+
+	cleanFullParts := strings.Split(fullName, "/")
+	cleanTargetParts := strings.Split(target, "/")
+
+	for i := range cleanFullParts {
+		cleanFullParts[i] = strings.TrimSpace(cleanFullParts[i])
+	}
+	for i := range cleanTargetParts {
+		cleanTargetParts[i] = strings.TrimSpace(cleanTargetParts[i])
+	}
+
+	// 1. Match against any single segment
+	for _, seg := range cleanFullParts {
+		if strings.EqualFold(seg, target) {
+			return true
+		}
+	}
+
+	// 2. Normalized path subpath match (e.g. "Österreich/Wien" in "Global/Österreich/Wien")
+	normFull := "/" + strings.ToLower(strings.Join(cleanFullParts, "/")) + "/"
+	normTarget := "/" + strings.ToLower(strings.Join(cleanTargetParts, "/")) + "/"
+	return strings.Contains(normFull, normTarget)
 }
 
 // firstNonEmpty returns the first non-empty string from a list of arguments.

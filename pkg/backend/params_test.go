@@ -1,8 +1,10 @@
 package backend
 
 import (
+	"fmt"
 	"net/url"
 	"testing"
+	"time"
 )
 
 func TestNormalizePriority(t *testing.T) {
@@ -107,3 +109,44 @@ func TestBuildAssuranceParams_SkipEmpties(t *testing.T) {
 		t.Fatal("endTime should be omitted")
 	}
 }
+
+func TestBuildSiteHealthParamsFromQuery(t *testing.T) {
+	// Case 1: Recent timestamp (e.g. now) should be omitted to fetch latest snapshot
+	recentTs := time.Now().UnixMilli()
+	q1 := QueryModel{
+		SiteType: "BUILDING",
+	}
+	p1 := buildSiteHealthParamsFromQuery(q1, recentTs, 50, 1)
+	if _, exists := p1["timestamp"]; exists {
+		t.Errorf("expected timestamp to be omitted for recent time, but got: %s", p1.Get("timestamp"))
+	}
+	if p1.Get("siteType") != "BUILDING" {
+		t.Errorf("expected siteType BUILDING, got %s", p1.Get("siteType"))
+	}
+	if p1.Get("limit") != "50" {
+		t.Errorf("expected limit 50, got %s", p1.Get("limit"))
+	}
+	if p1.Get("offset") != "1" {
+		t.Errorf("expected offset 1, got %s", p1.Get("offset"))
+	}
+
+	// Case 2: Historical timestamp (e.g. 2 hours ago) should be included
+	histTs := time.Now().Add(-2 * time.Hour).UnixMilli()
+	p2 := buildSiteHealthParamsFromQuery(q1, histTs, 50, 1)
+	if p2.Get("timestamp") != fmt.Sprintf("%d", histTs) {
+		t.Errorf("expected timestamp %d, got %s", histTs, p2.Get("timestamp"))
+	}
+
+	// Case 3: Zero or negative timestamp should be omitted
+	p3 := buildSiteHealthParamsFromQuery(q1, 0, 10, 0)
+	if _, exists := p3["timestamp"]; exists {
+		t.Errorf("expected timestamp to be omitted for zero, but got: %s", p3.Get("timestamp"))
+	}
+	if p3.Get("offset") != "1" {
+		t.Errorf("expected offset clamped to 1, got %s", p3.Get("offset"))
+	}
+	if p3.Get("limit") != "10" {
+		t.Errorf("expected limit 10, got %s", p3.Get("limit"))
+	}
+}
+

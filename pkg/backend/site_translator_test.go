@@ -474,7 +474,8 @@ func TestSiteTranslator_Pagination(t *testing.T) {
 		offset := r.URL.Query().Get("offset")
 
 		var response SiteEnvelope
-		if offset == "1" {
+		switch offset {
+		case "1":
 			// First page - return 500 sites (simulating full page)
 			sites := make([]Site, 500)
 			for i := 0; i < 500; i++ {
@@ -484,7 +485,7 @@ func TestSiteTranslator_Pagination(t *testing.T) {
 				}
 			}
 			response = SiteEnvelope{Response: sites}
-		} else if offset == "501" {
+		case "501":
 			// Second page - return 100 sites (last page)
 			sites := make([]Site, 100)
 			for i := 0; i < 100; i++ {

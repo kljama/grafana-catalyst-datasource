@@ -10,21 +10,38 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// shouldIncludeSiteHealthTimestamp checks if the timestamp should be included in
+// the site-health request. The Catalyst Center API treats timestamp as optional
+// for querying historical snapshots. If timestamp is non-positive or within recent time
+// (e.g., within 30 minutes of now or in the future), we omit it so that Catalyst Center
+// returns the latest available real-time snapshot instead of an empty list.
+func shouldIncludeSiteHealthTimestamp(timestamp int64) bool {
+	if timestamp <= 0 {
+		return false
+	}
+	t := time.UnixMilli(timestamp)
+	if time.Since(t) < 30*time.Minute {
+		return false
+	}
+	return true
+}
 
 // buildSiteHealthParamsFromQuery converts a QueryModel into url.Values for the site-health endpoint.
 func buildSiteHealthParamsFromQuery(q QueryModel, timestamp int64, limit int, offset int) url.Values {
 	p := url.Values{}
-	p.Set("timestamp", fmt.Sprintf("%d", timestamp))
+	if shouldIncludeSiteHealthTimestamp(timestamp) {
+		p.Set("timestamp", fmt.Sprintf("%d", timestamp))
+	}
 
 	if q.SiteType != "" {
 		p.Set("siteType", q.SiteType)
 	}
 
 	// The site-health endpoint does not support filtering by siteId or siteName directly in the query params.
-	// This filtering should be done on the client-side after fetching the data,
-	// or the query needs to be adapted if a different endpoint is more suitable.
-	// For now, we will not add siteId/siteName to the query.
+	// This filtering is performed in the backend after fetching the data.
 
 	// Clamp limit to sane values: default 50, min 1, max 50 (API max)
 	clampedLimit := clampLimit(limit, 50, 1, 50)

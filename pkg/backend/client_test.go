@@ -648,12 +648,13 @@ func TestClient_FetchAllIssues_WithSiteIDs(t *testing.T) {
 
 		// Return different issues based on site
 		var response IssuesEnvelope
-		if siteID == "site-1" {
+		switch siteID {
+		case "site-1":
 			response.Response = []map[string]any{
 				{"issueId": "issue-1-1", "siteId": "site-1"},
 				{"issueId": "issue-1-2", "siteId": "site-1"},
 			}
-		} else if siteID == "site-2" {
+		case "site-2":
 			response.Response = []map[string]any{
 				{"issueId": "issue-2-1", "siteId": "site-2"},
 			}

@@ -84,25 +84,6 @@ func (m *mockSiteTranslator) GetAllSites(ctx context.Context) ([]Site, error) {
 	return nil, fmt.Errorf("GetAllSites not mocked")
 }
 
-// ==================== Mock-Enabled Datasource ====================
-
-// testDatasource is a datasource that allows injection of mocks for testing
-type testDatasource struct {
-	*Datasource
-	mockClient         *mockClient
-	mockSiteTranslator *mockSiteTranslator
-}
-
-// Override getSiteTranslator to return our mock
-func (td *testDatasource) getSiteTranslator(inst *dsInstance, httpClient interface{}) *mockSiteTranslator {
-	return td.mockSiteTranslator
-}
-
-// Override NewClient to return our mock
-func newMockClient(httpClient interface{}, tm *tokenManager, inst *dsInstance, mockClient *mockClient) *mockClient {
-	return mockClient
-}
-
 // ==================== Integration Tests ====================
 
 // TestDatasource_QueryData_MainFlow verifies the standard QueryData flow:
@@ -717,3 +698,114 @@ func TestDatasource_CallResource_Sites(t *testing.T) {
 		t.Fatalf("expected response body to contain Building A, got: %s", string(sender.resp.Body))
 	}
 }
+
+func TestFilterSiteHealthData(t *testing.T) {
+	sampleData := []map[string]any{
+		{
+			"siteId":         "d4ef280a-d71e-4a2f-8f9f-c1740a406075",
+			"siteName":       "ORF Mediencampus",
+			"siteType":       "area",
+			"parentSiteId":   "root-id",
+			"parentSiteName": "Global",
+			"clientCount":    100.0,
+		},
+		{
+			"siteId":         "bldg-1-uuid",
+			"siteName":       "Building 1",
+			"siteType":       "building",
+			"parentSiteId":   "d4ef280a-d71e-4a2f-8f9f-c1740a406075",
+			"parentSiteName": "ORF Mediencampus",
+			"clientCount":    40.0,
+		},
+		{
+			"siteId":         "other-uuid",
+			"siteName":       "Global/Austria/Vienna/OtherSite",
+			"siteType":       "building",
+			"parentSiteId":   "vienna-id",
+			"parentSiteName": "Vienna",
+			"clientCount":    10.0,
+		},
+	}
+
+	// 1. Unfiltered query
+	res1 := filterSiteHealthData(sampleData, QueryModel{})
+	if len(res1) != 3 {
+		t.Fatalf("expected 3 items unfiltered, got %d", len(res1))
+	}
+
+	// 2. Filter by siteId case-insensitively
+	res2 := filterSiteHealthData(sampleData, QueryModel{
+		SiteID: []string{"D4EF280A-D71E-4A2F-8F9F-C1740A406075"},
+	})
+	// Should match the area AND the child building (which has parentSiteId matching)
+	if len(res2) != 2 {
+		t.Fatalf("expected 2 items (area + child building), got %d", len(res2))
+	}
+
+	// 3. Filter by siteName
+	res3 := filterSiteHealthData(sampleData, QueryModel{
+		SiteName: []string{"ORF Mediencampus"},
+	})
+	if len(res3) != 2 {
+		t.Fatalf("expected 2 items matching ORF Mediencampus directly and as parent, got %d", len(res3))
+	}
+
+	// 4. Filter by hierarchy leaf name
+	res4 := filterSiteHealthData(sampleData, QueryModel{
+		SiteName: []string{"OtherSite"},
+	})
+	if len(res4) != 1 || res4[0]["siteId"] != "other-uuid" {
+		t.Fatalf("expected 1 item matching OtherSite, got %d", len(res4))
+	}
+
+	// 5. Filter by parentSiteName explicitly
+	res5 := filterSiteHealthData(sampleData, QueryModel{
+		ParentSiteName: "Vienna",
+	})
+	if len(res5) != 1 || res5[0]["siteId"] != "other-uuid" {
+		t.Fatalf("expected 1 item matching parent Vienna, got %d", len(res5))
+	}
+
+	// 6. Filter by parentSiteName with hierarchy path segment and leading/trailing whitespace
+	hierarchyData := []map[string]any{
+		{
+			"siteId":         "bldg-orf",
+			"siteName":       "ORF Mediencampus",
+			"siteType":       "building",
+			"parentSiteName": "Global / Österreich / Wien",
+			"clientCount":    50.0,
+		},
+	}
+	res6 := filterSiteHealthData(hierarchyData, QueryModel{
+		ParentSiteName: "Wien",
+	})
+	if len(res6) != 1 || res6[0]["siteId"] != "bldg-orf" {
+		t.Fatalf("expected 1 item matching Wien in hierarchy path, got %d", len(res6))
+	}
+
+	res7 := filterSiteHealthData(hierarchyData, QueryModel{
+		ParentSiteName: "Österreich",
+	})
+	if len(res7) != 1 || res7[0]["siteId"] != "bldg-orf" {
+		t.Fatalf("expected 1 item matching Österreich in hierarchy path, got %d", len(res7))
+	}
+
+	// 7. Subpath matching
+	res8 := filterSiteHealthData(hierarchyData, QueryModel{
+		ParentSiteName: "Österreich/Wien",
+	})
+	if len(res8) != 1 || res8[0]["siteId"] != "bldg-orf" {
+		t.Fatalf("expected 1 item matching subpath Österreich/Wien, got %d", len(res8))
+	}
+
+	// 8. Empty strings in siteID and siteName slices should not filter out results if parent matches
+	res9 := filterSiteHealthData(hierarchyData, QueryModel{
+		SiteID:         []string{""},
+		SiteName:       []string{""},
+		ParentSiteName: "Wien",
+	})
+	if len(res9) != 1 || res9[0]["siteId"] != "bldg-orf" {
+		t.Fatalf("expected 1 item when SiteID/SiteName have empty strings, got %d", len(res9))
+	}
+}
+

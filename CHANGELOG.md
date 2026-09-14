@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Site Health Real-time Query:** Omit `timestamp` parameter for near real-time queries so Catalyst Center returns current health data instead of an empty snapshot list.
+- **Site Health Filtering:** Added case-insensitive matching for `siteId` and support for filtering by `siteName`, `parentSiteId`, and `parentSiteName` (including child buildings under a selected area/campus).
+- **Site Health DataFrame Generation:** Fixed `siteName` and `siteId` column population types, metric discovery, and deterministic column ordering.
+- **Site Health Client Metrics:** Added transparent alias and fallback mapping between Catalyst Center client count metric names (`numberOfClients`, `numberOfWiredClients`, `numberOfWirelessClients`, `wiredGoodClients`, `wirelessGoodClients`) and query model metric names (`clientCount`, `totalNumberOfConnectedWiredClients`, `totalNumberOfActiveWirelessClients`), with automatic client summation. Added native Cisco API metric options to the query editor.
+
 ## [1.3.0] - 2025-10-09
 
 ### Changed
