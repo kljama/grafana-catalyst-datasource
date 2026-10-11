@@ -104,25 +104,27 @@ The total is about 30.5 developer-days, roughly 6–7 weeks for one developer.
 
 ### Phase 0 – Test harness (release 1.0.6)
 
+**Status:** done on branch `fix/1.0.6`. WP0.4 is confirmed by the first CI run on a pull request. Twelve of the fourteen fixtures are marked `pending` and reproduce C1, C2 and C3 when run with `FIXTURES_RUN_PENDING=1`.
+
 #### WP0.1 Fake Catalyst Center (3.1.6 APIs)
 **Fixes:** prerequisite for all · **Effort:** 1.75 d · **Depends on:** –
 
 **File:** `pkg/backend/fakecc_test.go` (new)
 
-- [ ] `httptest` server with these endpoints:
+- [x] `httptest` server with these endpoints:
   - `POST /dna/system/api/v1/auth/token`
   - `GET /dna/data/api/v1/assuranceIssues`
   - `GET /dna/intent/api/v1/sites`
   - `GET /dna/data/api/v1/siteHealthSummaries`
   - and, until they are replaced, the legacy `GET /dna/intent/api/v2/site` and `GET /dna/intent/api/v1/site-health`.
-- [ ] Records every request (path, query, `X-Auth-Token`) for assertions.
-- [ ] Switches for:
+- [x] Records every request (path, query, `X-Auth-Token`) for assertions.
+- [x] Switches for:
   - `limit` mode: strict (400 above the spec maximum), cap (truncate), lenient;
   - 401 after token revocation; 403; 429 with `Retry-After`; 200 with an HTML body;
   - `siteHealthSummaries` "data not ready for endTime" error;
   - mounting under a path prefix with `http.StripPrefix`.
-- [ ] Fixture data from the 3.1.6 spec examples. The fixture site tree has at least 3 levels with `siteHierarchyId`, two buildings with the same leaf name, and floors.
-- [ ] Wildcard matching for `siteHierarchyId` (`prefix*`, `*x*`), so the filter work packages can be tested.
+- [x] Fixture data from the 3.1.6 spec examples. The fixture site tree has at least 3 levels with `siteHierarchyId`, two buildings with the same leaf name, and floors.
+- [x] Wildcard matching for `siteHierarchyId` (`prefix*`, `*x*`), so the filter work packages can be tested.
 
 **Done when:** an example test drives `QueryData` end to end through the fake server.
 
@@ -131,8 +133,8 @@ The total is about 30.5 developer-days, roughly 6–7 weeks for one developer.
 
 **Files:** `pkg/backend/datasource_test.go`, `client_test.go`
 
-- [ ] Rewrite the `QueryData` tests that call `https://catalyst.example.com` to use the fake server, and make them assert rows and request parameters.
-- [ ] Delete the unused `mockClient` and `mockSiteTranslator`.
+- [x] Rewrite the `QueryData` tests that call `https://catalyst.example.com` to use the fake server, and make them assert rows and request parameters.
+- [x] Delete the unused `mockClient` and `mockSiteTranslator`.
 
 **Done when:** `go test ./...` makes no outbound network calls.
 
@@ -141,17 +143,17 @@ The total is about 30.5 developer-days, roughly 6–7 weeks for one developer.
 
 **Files:** `pkg/backend/testdata/queries/*.json`, `src/__fixtures__/queries.ts` (new)
 
-- [ ] Build fixtures from `git show v1.0.4:` and `git show v1.0.5:` editor output. Cover: no site; `siteId` as a string; `issueStatus`; `deviceId` as a UUID and as an IP; `aiDriven` as `'true'` and `'false'`; `priority` arrays; a missing `limit`.
-- [ ] Add current (pre-1.2.0) site-health queries with the old metric names, for WP4.2.
-- [ ] Each fixture lists the API parameters it must produce.
+- [x] Build fixtures from `git show v1.0.4:` and `git show v1.0.5:` editor output. Cover: no site; `siteId` as a string; `issueStatus`; `deviceId` as a UUID and as an IP; `aiDriven` as `'true'` and `'false'`; `priority` arrays; a missing `limit`.
+- [x] Add current (pre-1.2.0) site-health queries with the old metric names, for WP4.2.
+- [x] Each fixture lists the API parameters it must produce.
 
 #### WP0.4 Run Go tests in CI
 **Fixes:** L30, part of L29 · **Effort:** 0.5 d · **Depends on:** –
 
 **Files:** `.github/workflows/ci.yml`, `.github/workflows/release.yml`
 
-- [ ] `ci.yml`: add `actions/setup-go` with `go-version-file: go.mod`, then `go vet ./...` and `go test -race ./...`.
-- [ ] `release.yml`: switch to `go-version-file: go.mod` (replacing `"1.21"`), and run `npm run test:ci` and `go test ./...` before building.
+- [x] `ci.yml`: add `actions/setup-go` with `go-version-file: go.mod`, then `go vet ./...` and `go test -race ./...`.
+- [x] `release.yml`: switch to `go-version-file: go.mod` (replacing `"1.21"`), and run `npm run test:ci` and `go test ./...` before building.
 
 **Done when:** a deliberately failing Go test fails CI.
 
