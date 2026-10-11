@@ -1,7 +1,6 @@
 {
   "name": "provisioned-empty-site-strings",
   "source": "Payload produced by applyTemplateVariables for a query without siteId/siteName",
-  "pending": "WP1.3",
   "description": "Missing siteId/siteName arrive as empty strings (review C2: fails with 'invalid query model' today).",
   "query": {
     "datasource": {

@@ -124,6 +124,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 			continue
 		}
 		qm.TimeRange = q.TimeRange
+		qm.normalize()
 		log.DefaultLogger.Info("Executing query", "refId", q.RefID, "queryType", qm.QueryType, "limit", qm.Limit)
 		log.DefaultLogger.Debug("Full query model", "query", fmt.Sprintf("%+v", qm))
 
@@ -151,6 +152,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 			if err != nil {
 				dr.Error = err
 			} else {
+				addNotices(frame, qm.notices)
 				dr.Frames = append(dr.Frames, frame)
 			}
 			resp.Responses[q.RefID] = dr
@@ -190,10 +192,25 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 
 		// 4. Transform API response into Grafana data.Frame
 		frame := IssueResponseToDataFrame(ctx, allIssues, q.RefID, q.TimeRange, hardLimit, siteTranslator)
+		addNotices(frame, qm.notices)
 		dr.Frames = append(dr.Frames, frame)
 		resp.Responses[q.RefID] = dr
 	}
 	return resp, nil
+}
+
+// addNotices adds warning notices (for example from QueryModel.normalize) to a
+// result frame.
+func addNotices(frame *data.Frame, notices []string) {
+	if len(notices) == 0 {
+		return
+	}
+	if frame.Meta == nil {
+		frame.Meta = &data.FrameMeta{}
+	}
+	for _, n := range notices {
+		frame.Meta.Notices = append(frame.Meta.Notices, data.Notice{Severity: data.NoticeSeverityWarning, Text: n})
+	}
 }
 
 // querySiteHealth handles the specific logic for the 'siteHealth' query type.

@@ -1,7 +1,6 @@
 {
   "name": "v1x-aidriven-false",
   "source": "Saved by the v1.0.4/v1.0.5 query editor",
-  "pending": "WP1.3",
   "description": "aiDriven saved as the string 'false' means 'only non-AI issues' and must send aiDriven=false (TriBool, WP1.3).",
   "query": {
     "datasource": {

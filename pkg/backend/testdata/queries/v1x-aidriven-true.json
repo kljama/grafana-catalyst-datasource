@@ -1,7 +1,6 @@
 {
   "name": "v1x-aidriven-true",
   "source": "Saved by the v1.0.4/v1.0.5 query editor",
-  "pending": "WP1.3",
   "description": "aiDriven saved as the string 'true' (review C3: fails with 'invalid query model' today).",
   "query": {
     "datasource": {

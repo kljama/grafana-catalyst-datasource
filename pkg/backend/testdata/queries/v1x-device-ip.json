@@ -1,7 +1,6 @@
 {
   "name": "v1x-device-ip",
   "source": "Saved by the v1.0.4/v1.0.5 query editor",
-  "pending": "WP1.3",
   "description": "Legacy deviceId holding an IP address maps to networkDeviceIpAddress (decision D2).",
   "query": {
     "datasource": {

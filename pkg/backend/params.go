@@ -147,6 +147,9 @@ func buildAssuranceParamsFromQuery(q QueryModel, startTime, endTime int64, pageS
 	if q.NetworkDeviceID != "" {
 		p.Set("networkDeviceId", q.NetworkDeviceID)
 	}
+	if q.NetworkDeviceIP != "" {
+		p.Set("networkDeviceIpAddress", q.NetworkDeviceIP)
+	}
 	if q.MACAddress != "" {
 		p.Set("macAddress", q.MACAddress)
 	}
@@ -162,11 +165,12 @@ func buildAssuranceParamsFromQuery(q QueryModel, startTime, endTime int64, pageS
 		// The 'IssueName' from the UI corresponds to the 'name' of the issue in the API
 		p.Set("name", q.IssueName)
 	}
-	if q.AIDriven {
-		p.Set("aiDriven", "true")
+	// Unset filters are omitted; an explicit "false" (saved by v1.0.x) is sent.
+	if v, ok := q.AIDriven.Param(); ok {
+		p.Set("aiDriven", v)
 	}
-	if q.IsGlobal {
-		p.Set("isGlobal", "true")
+	if v, ok := q.IsGlobal.Param(); ok {
+		p.Set("isGlobal", v)
 	}
 
 	// The API accepts a limit of 1..25 (issuesPageSize); anything larger is

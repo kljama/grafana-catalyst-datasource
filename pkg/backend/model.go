@@ -2,7 +2,11 @@ package backend
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -120,42 +124,87 @@ func SiteURL(base string) (string, error) {
 	return u.String(), nil
 }
 
-// StringOrBool is a custom type that can unmarshal both boolean (true/false)
-// and string ("true", "false", "yes", "no") values from JSON into a normalized
-// string representation. This provides flexibility for API fields that might
-// return booleans in different formats.
-type StringOrBool string
+// StringList is a list of strings that also accepts the shapes older query
+// editors saved: a single string ("x" becomes ["x"]), an empty string or null
+// (both become an empty list). Blank entries are dropped and numbers are kept
+// as their decimal text.
+type StringList []string
 
-func (v *StringOrBool) UnmarshalJSON(b []byte) error {
-	// Try boolean first
-	var bv bool
-	if err := json.Unmarshal(b, &bv); err == nil {
-		if bv {
-			*v = StringOrBool("true")
-		} else {
-			*v = StringOrBool("false")
-		}
-		return nil
+func (l *StringList) UnmarshalJSON(b []byte) error {
+	var raw any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
 	}
-	// Then string
-	var sv string
-	if err := json.Unmarshal(b, &sv); err == nil {
-		s := strings.ToLower(strings.TrimSpace(sv))
-		switch s {
-		case "true", "yes", "1":
-			*v = StringOrBool("true")
-		case "false", "no", "0":
-			*v = StringOrBool("false")
+	var items []any
+	switch v := raw.(type) {
+	case nil:
+		*l = nil
+		return nil
+	case []any:
+		items = v
+	default:
+		items = []any{v}
+	}
+	var out StringList
+	for _, it := range items {
+		var s string
+		switch v := it.(type) {
+		case string:
+			s = strings.TrimSpace(v)
+		case float64:
+			s = strconv.FormatFloat(v, 'f', -1, 64)
 		default:
-			*v = StringOrBool(sv)
+			return fmt.Errorf("expected a string or a list of strings, got %s", string(b))
 		}
-		return nil
+		if s != "" {
+			out = append(out, s)
+		}
 	}
-	// Be lenient on unknown types
+	*l = out
 	return nil
 }
 
-func (v StringOrBool) String() string { return string(v) }
+// TriBool is an optional boolean filter (aiDriven, isGlobal). It keeps both
+// meanings that saved dashboards use:
+//   - JSON true sets the filter to true;
+//   - JSON false, null or absent leaves it unset (the current editor's switch "off");
+//   - the strings "true" and "false" (written by the v1.0.x editor) set an explicit
+//     filter value, so "false" still means "only issues where this is false".
+type TriBool struct {
+	set   bool
+	value bool
+}
+
+func (t *TriBool) UnmarshalJSON(b []byte) error {
+	var raw any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	*t = TriBool{}
+	switch v := raw.(type) {
+	case bool:
+		if v {
+			*t = TriBool{set: true, value: true}
+		}
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "yes", "1":
+			*t = TriBool{set: true, value: true}
+		case "false", "no", "0":
+			*t = TriBool{set: true, value: false}
+		}
+	}
+	return nil
+}
+
+// Param returns the API parameter value ("true" or "false") and whether the
+// filter is set at all.
+func (t TriBool) Param() (string, bool) {
+	if !t.set {
+		return "", false
+	}
+	return strconv.FormatBool(t.value), true
+}
 
 // QueryModel represents the query structure sent from the frontend.
 // It is used by the backend to construct API requests.
@@ -164,21 +213,65 @@ type QueryModel struct {
 	QueryType string            `json:"queryType,omitempty"`
 	Limit     *int64            `json:"limit,omitempty"`
 	// Filters for assurance issues
-	Priority        []string `json:"priority,omitempty"`
-	Status          []string `json:"status,omitempty"`
-	NetworkDeviceID string   `json:"networkDeviceId,omitempty"`
-	MACAddress      string   `json:"macAddress,omitempty"`
-	SiteID          []string `json:"siteId,omitempty"`
-	SiteName        []string `json:"siteName,omitempty"`
-	IssueName       string   `json:"issueName,omitempty"`
-	AIDriven        bool     `json:"aiDriven,omitempty"`
-	IsGlobal        bool     `json:"isGlobal,omitempty"`
+	Priority        StringList `json:"priority,omitempty"`
+	Status          StringList `json:"status,omitempty"`
+	NetworkDeviceID string     `json:"networkDeviceId,omitempty"`
+	NetworkDeviceIP string     `json:"networkDeviceIpAddress,omitempty"`
+	MACAddress      string     `json:"macAddress,omitempty"`
+	SiteID          StringList `json:"siteId,omitempty"`
+	SiteName        StringList `json:"siteName,omitempty"`
+	IssueName       string     `json:"issueName,omitempty"`
+	AIDriven        TriBool    `json:"aiDriven,omitempty"`
+	IsGlobal        TriBool    `json:"isGlobal,omitempty"`
 
 	// Filters for site-health
-	SiteType       string   `json:"siteType,omitempty"`
-	ParentSiteName string   `json:"parentSiteName,omitempty"`
-	ParentSiteID   string   `json:"parentSiteId,omitempty"`
-	Metrics        []string `json:"metrics,omitempty"`
+	SiteType       string     `json:"siteType,omitempty"`
+	ParentSiteName string     `json:"parentSiteName,omitempty"`
+	ParentSiteID   string     `json:"parentSiteId,omitempty"`
+	Metrics        StringList `json:"metrics,omitempty"`
+
+	// Legacy fields saved by the v1.0.x query editor. normalize() moves them
+	// into the current fields.
+	IssueStatus string `json:"issueStatus,omitempty"`
+	DeviceID    string `json:"deviceId,omitempty"`
+	Severity    string `json:"severity,omitempty"`
+
+	// notices are user-facing messages produced by normalize(); QueryData adds
+	// them to the result frames.
+	notices []string
+}
+
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// normalize maps the legacy v1.0.x fields onto the current ones:
+//   - issueStatus becomes status (unless status is already set);
+//   - severity becomes priority (unless priority is already set);
+//   - deviceId becomes networkDeviceId for a device UUID or networkDeviceIpAddress
+//     for an IP address; any other value is dropped with a notice (decision D2).
+func (q *QueryModel) normalize() {
+	if len(q.Status) == 0 && strings.TrimSpace(q.IssueStatus) != "" {
+		q.Status = StringList{strings.TrimSpace(q.IssueStatus)}
+	}
+	q.IssueStatus = ""
+	if len(q.Priority) == 0 && strings.TrimSpace(q.Severity) != "" {
+		q.Priority = StringList{strings.TrimSpace(q.Severity)}
+	}
+	q.Severity = ""
+	if d := strings.TrimSpace(q.DeviceID); d != "" {
+		switch {
+		case uuidPattern.MatchString(d):
+			if q.NetworkDeviceID == "" {
+				q.NetworkDeviceID = d
+			}
+		case net.ParseIP(d) != nil:
+			if q.NetworkDeviceIP == "" {
+				q.NetworkDeviceIP = d
+			}
+		default:
+			q.notices = append(q.notices, fmt.Sprintf("Ignored the legacy deviceId filter %q: it is neither a device UUID nor an IP address. Set the Device ID field to a device UUID.", d))
+		}
+	}
+	q.DeviceID = ""
 }
 
 // IssuesEnvelope is used to unmarshal the 'response' array from the issues API.

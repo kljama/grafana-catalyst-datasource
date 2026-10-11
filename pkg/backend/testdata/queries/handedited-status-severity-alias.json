@@ -1,7 +1,6 @@
 {
   "name": "handedited-status-severity-alias",
   "source": "Hand-edited JSON using the v1.0.x alias fields",
-  "pending": "WP1.3",
   "description": "String aliases 'status' and 'severity' that the v1.0.x backend accepted.",
   "query": {
     "datasource": {
