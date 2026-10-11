@@ -565,3 +565,32 @@ func TestFilterSiteHealthData(t *testing.T) {
 		t.Fatalf("expected 1 item when SiteID/SiteName have empty strings, got %d", len(res9))
 	}
 }
+
+// TestDatasource_CallResource_IssuesPagingClamped verifies that the issues
+// passthrough keeps paging within the API contract (WP1.2): the frontend helper
+// used to send offset=0 and limit=100.
+func TestDatasource_CallResource_IssuesPagingClamped(t *testing.T) {
+	f := newFakeCC(t)
+	f.LimitMode = limitStrict
+
+	sender := &mockResourceSender{}
+	err := NewDatasource().CallResource(context.Background(), &backend.CallResourceRequest{
+		Path:          "issues",
+		URL:           "issues?startTime=1&endTime=2&limit=100&offset=0",
+		PluginContext: f.pluginContext("passthrough"),
+	}, sender)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sender.resp == nil || sender.resp.Status != http.StatusOK {
+		t.Fatalf("expected 200 OK, got: %+v", sender.resp)
+	}
+	reqs := f.Requests(epIssues)
+	if len(reqs) != 1 {
+		t.Fatalf("expected 1 issues request, got %d", len(reqs))
+	}
+	q := reqs[0].Query
+	if q.Get("limit") != "25" || q.Get("offset") != "1" || q.Get("startTime") != "1" || q.Get("endTime") != "2" {
+		t.Fatalf("unexpected forwarded query: %v", q)
+	}
+}

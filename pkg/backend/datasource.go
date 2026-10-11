@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -495,6 +496,26 @@ func (d *Datasource) handleSitesRequest(ctx context.Context, req *backend.CallRe
 	})
 }
 
+// clampPassthroughPaging keeps the paging parameters of a forwarded issues query
+// within the API contract: limit 1..25 (issuesPageSize) and offset from 1. Other
+// parameters are passed through unchanged.
+func clampPassthroughPaging(rawQuery string) string {
+	vals, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return rawQuery
+	}
+	if v, ok := vals["limit"]; ok && len(v) > 0 {
+		n, _ := strconv.Atoi(v[0])
+		vals.Set("limit", strconv.Itoa(clampLimit(n, issuesPageSize, 1, issuesPageSize)))
+	}
+	if v, ok := vals["offset"]; ok && len(v) > 0 {
+		if n, err := strconv.Atoi(v[0]); err != nil || n < 1 {
+			vals.Set("offset", "1")
+		}
+	}
+	return vals.Encode()
+}
+
 // resourceIssues handles requests to the /issues resource path. It forwards the
 // query parameters from the frontend to the Catalyst Center issues API.
 func (d *Datasource) resourceIssues(ctx context.Context, inst *dsInstance, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender, httpClient *http.Client) error {
@@ -515,7 +536,7 @@ func (d *Datasource) resourceIssues(ctx context.Context, inst *dsInstance, req *
 
 	q := ""
 	if rawQuery != "" {
-		q = "?" + rawQuery
+		q = "?" + clampPassthroughPaging(rawQuery)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, issuesURL+q, nil)

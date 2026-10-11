@@ -25,8 +25,9 @@ import { logger } from './logger';
 type InstanceSettings = DataSourceInstanceSettings<CatalystJsonData>;
 
 // PAGE_SIZE: Number of rows to fetch per page when populating template variables.
+// The assuranceIssues API accepts at most 25 per request, and its offset starts at 1.
 // MAX_PAGES: Maximum number of pages to fetch (prevents excessive API calls).
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 25;
 const MAX_PAGES = 5; // variable helper only
 
 export class DataSource extends DataSourceWithBackend<CatalystQuery, CatalystJsonData> {
@@ -117,7 +118,7 @@ export class DataSource extends DataSourceWithBackend<CatalystQuery, CatalystJso
     const start = now - 24 * 60 * 60 * 1000;
     const s = (search ?? '').toLowerCase().trim();
 
-    let offset = 0;
+    let offset = 1;
     for (let page = 0; page < MAX_PAGES; page++) {
       const params = new URLSearchParams({
         startTime: String(start),
