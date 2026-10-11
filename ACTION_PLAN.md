@@ -104,7 +104,7 @@ The total is about 30.5 developer-days, roughly 6–7 weeks for one developer.
 
 ### Phase 0 – Test harness (release 1.0.6)
 
-**Status:** done on branch `fix/1.0.6`. WP0.4 is confirmed by the first CI run on a pull request. Twelve of the fourteen fixtures are marked `pending` and reproduce C1, C2 and C3 when run with `FIXTURES_RUN_PENDING=1`.
+**Status:** done on branch `fix/1.0.6`. WP0.4 was confirmed by the first CI run on PR #21. Twelve of the fourteen fixtures are marked `pending` and reproduce C1, C2 and C3 when run with `FIXTURES_RUN_PENDING=1`.
 
 #### WP0.1 Fake Catalyst Center (3.1.6 APIs)
 **Fixes:** prerequisite for all · **Effort:** 1.75 d · **Depends on:** –
@@ -159,16 +159,18 @@ The total is about 30.5 developer-days, roughly 6–7 weeks for one developer.
 
 ### Phase 1 – Critical fixes (release 1.0.6)
 
+**Status:** WP1.1–WP1.4 done on branch `fix/1.0.6`. All fixtures assigned to them pass; only `provisioned-no-limit` (WP2.5) and `current-sitehealth-legacy-metrics` (WP4.2) are still pending. WP1.5 needs the manual check and the release tag.
+
 #### WP1.1 Issue paging within the API limit
 **Fixes:** C1 · **Effort:** 0.5 d · **Depends on:** WP0.1
 
 **Files:** `pkg/backend/client.go`, `params.go`, `client_test.go`
 
-- [ ] Replace `pageSize := 50` with `const issuesPageSize = 25` (the 3.1.6 spec maximum).
-- [ ] `buildAssuranceParamsFromQuery`: use `clampLimit(pageSize, 25, 1, 25)`.
-- [ ] End pagination when `len(issues) < limitForThisPage`.
-- [ ] Advance the offset by `len(issues)`.
-- [ ] Update the pagination and hard-limit tests that assume pages of 50.
+- [x] Replace `pageSize := 50` with `const issuesPageSize = 25` (the 3.1.6 spec maximum).
+- [x] `buildAssuranceParamsFromQuery`: use `clampLimit(pageSize, 25, 1, 25)`.
+- [x] End pagination when `len(issues) < limitForThisPage`.
+- [x] Advance the offset by `len(issues)`.
+- [x] Update the pagination and hard-limit tests that assume pages of 50.
 
 **Done when:** in both strict and cap mode, `limit=100` gives 4 requests (offsets 1, 26, 51, 76) and 100 rows, and no request has `limit > 25`.
 
@@ -177,8 +179,8 @@ The total is about 30.5 developer-days, roughly 6–7 weeks for one developer.
 
 **Files:** `src/datasource.ts`, `pkg/backend/datasource.go` (`resourceIssues`)
 
-- [ ] `PAGE_SIZE = 25`; start at `offset=1`; then `offset += PAGE_SIZE`.
-- [ ] `resourceIssues` clamps the forwarded `limit` to 1..25 and `offset` to ≥ 1.
+- [x] `PAGE_SIZE = 25`; start at `offset=1`; then `offset += PAGE_SIZE`.
+- [x] `resourceIssues` clamps the forwarded `limit` to 1..25 and `offset` to ≥ 1.
 
 **Done when:** Jest shows the first variable request is `limit=25&offset=1`, and a Go test shows the passthrough rewrites `offset=0&limit=100`.
 
@@ -187,19 +189,19 @@ The total is about 30.5 developer-days, roughly 6–7 weeks for one developer.
 
 **Files:** `pkg/backend/model.go`, `params.go`, `datasource.go`, `model_unmarshal_test.go`
 
-- [ ] Add a `StringList` type with `UnmarshalJSON`. It accepts `null`, `""`, `"x"` and `["x", ""]`, drops empty entries, and returns `nil` for empty input. Use it for `SiteID`, `SiteName`, `Priority`, `Status` and `Metrics`.
-- [ ] Add a `TriBool` type for `AIDriven` and `IsGlobal`:
+- [x] Add a `StringList` type with `UnmarshalJSON`. It accepts `null`, `""`, `"x"` and `["x", ""]`, drops empty entries, and returns `nil` for empty input. Use it for `SiteID`, `SiteName`, `Priority`, `Status` and `Metrics`.
+- [x] Add a `TriBool` type for `AIDriven` and `IsGlobal`:
   - JSON `true` → filter true;
   - JSON `false` → no filter (current switch "off");
   - string `"true"` / `"false"` → explicit filter (v1.0.5 meaning);
   - absent or `null` → no filter.
 
   Remove or replace the unused `StringOrBool`.
-- [ ] Add the legacy fields `issueStatus`, `deviceId` and `severity`. `normalize()` maps:
+- [x] Add the legacy fields `issueStatus`, `deviceId` and `severity`. `normalize()` maps:
   - `issueStatus` → `Status`;
   - `severity` → `Priority`;
   - `deviceId` per D2.
-- [ ] `params.go`:
+- [x] `params.go`:
   - send `aiDriven=false` and `isGlobal=false` when explicitly false;
   - add `networkDeviceIpAddress`;
   - add a frame notice for a dropped `deviceId`.
@@ -211,19 +213,19 @@ The total is about 30.5 developer-days, roughly 6–7 weeks for one developer.
 
 **Files:** `src/migrations.ts` (new), `src/datasource.ts`, `src/types.ts`, `src/components/QueryEditor.tsx`, tests
 
-- [ ] `migrateQuery(q)`:
+- [x] `migrateQuery(q)`:
   - `siteId` / `siteName`: a string becomes `[s]`, and `""` or `null` becomes `[]`;
   - `issueStatus` → `status: [upper(issueStatus)]`;
   - `deviceId` → `networkDeviceId` (UUID only, per D2);
   - `aiDriven: 'true'` → `true`; keep `'false'` as a string until the tri-state UI arrives in WP5.5.
-- [ ] `applyTemplateVariables`:
+- [x] `applyTemplateVariables`:
   - call `migrateQuery` first;
   - never turn `undefined` into `""`;
   - array fields always stay arrays.
-- [ ] `QueryEditor`:
+- [x] `QueryEditor`:
   - build the initial state from `migrateQuery(query)`;
   - the switch is checked only for `true` or `'true'`.
-- [ ] Do **not** change the mount-time `onChange` (L16) in this WP; it currently repairs old queries.
+- [x] Do **not** change the mount-time `onChange` (L16) in this WP; it currently repairs old queries.
 
 **Done when:**
 - `applyTemplateVariables` keeps `siteId` undefined or an array for every fixture.
@@ -233,7 +235,7 @@ The total is about 30.5 developer-days, roughly 6–7 weeks for one developer.
 #### WP1.5 Release 1.0.6
 **Effort:** 0.5 d · **Depends on:** WP1.1–WP1.4, WP0.4
 
-- [ ] CHANGELOG entries:
+- [x] CHANGELOG entries:
   - the fixed upgrade breakage (C2, C3) and the page-size fix (C1);
   - "Requires Catalyst Center 3.1.6 or later; linux/amd64 only; unsigned."
 - [ ] Manual check against the 3.1.6 lab (or the dev Grafana with the fake data):

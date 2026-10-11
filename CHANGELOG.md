@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Requires Catalyst Center 3.1.6 or later. The backend is built for linux/amd64 only, and the plugin is unsigned.
+
 ### Fixed
+- **Issue queries with a limit above 25:** The backend requested 50 issues per page, but the Catalyst Center API accepts at most 25. Depending on the server, such queries (including the default limit of 100) failed with HTTP 400 or never returned more than 25 issues per site. Pages are now 25 issues.
+- **Dashboards saved with v1.0.4/v1.0.5:** Saved issue panels failed with "invalid query model" or silently lost filters after the upgrade. Old query shapes are accepted again:
+  - a single `siteId` string, and a missing `siteId`/`siteName`;
+  - the legacy `issueStatus` and `severity` fields;
+  - `aiDriven` saved as `'true'`/`'false'`. An explicit `'false'` again means "only issues that are not AI-driven".
+  - the legacy `deviceId`: a device UUID filters by `networkDeviceId`, and an IP address by `networkDeviceIpAddress`. Other values are ignored, with a notice on the panel.
+- **Explore from an issue panel:** Opening an older issue panel in Explore no longer crashes the query editor.
+- **Template variable helper:** Requests issues with offset 1 and pages of 25, as the API requires. The backend passthrough also corrects out-of-range paging values.
 - **Site Health Real-time Query:** Omit `timestamp` parameter for near real-time queries so Catalyst Center returns current health data instead of an empty snapshot list.
 - **Site Health Filtering:** Added case-insensitive matching for `siteId` and support for filtering by `siteName`, `parentSiteId`, and `parentSiteName` (including child buildings under a selected area/campus).
 - **Site Health DataFrame Generation:** Fixed `siteName` and `siteId` column population types, metric discovery, and deterministic column ordering.
