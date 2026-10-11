@@ -1,7 +1,6 @@
 {
   "name": "current-issues-full",
   "source": "Saved by the current (pre-1.0.6) query editor",
-  "pending": "WP1.1",
   "description": "Full current shape. aiDriven/isGlobal false mean 'no filter'. Limit 100 needs pages of at most 25 (review C1).",
   "query": {
     "datasource": {

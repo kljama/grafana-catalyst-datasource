@@ -169,8 +169,9 @@ func buildAssuranceParamsFromQuery(q QueryModel, startTime, endTime int64, pageS
 		p.Set("isGlobal", "true")
 	}
 
-	// Clamp limit to sane values: default 100, min 1, max 500
-	clampedLimit := clampLimit(pageSize, 100, 1, 500)
+	// The API accepts a limit of 1..25 (issuesPageSize); anything larger is
+	// rejected or capped by Catalyst Center.
+	clampedLimit := clampLimit(pageSize, issuesPageSize, 1, issuesPageSize)
 	p.Set("limit", strconv.Itoa(clampedLimit))
 	
 	// Ensure offset is at least 1 (API uses 1-based indexing)
