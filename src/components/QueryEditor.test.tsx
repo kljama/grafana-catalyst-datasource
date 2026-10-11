@@ -570,7 +570,7 @@ describe('QueryEditor', () => {
       render(<QueryEditor {...defaultProps} />);
       
       // AsyncSelect should load options when opened
-      expect(mockDatasource.getResource).toHaveBeenCalledWith('sites');
+      expect(mockDatasource.getResource).toHaveBeenCalledWith('sites', undefined, { showErrorAlert: false });
     });
 
     it('should handle errors when loading sites', async () => {

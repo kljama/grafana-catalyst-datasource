@@ -120,7 +120,8 @@ const QueryEditor: React.FC<Props> = ({ query, onChange, onRunQuery, datasource 
 
   const loadSiteOptions = async (inputValue: string) => {
     try {
-      const sites = await datasource.getResource('sites');
+      // No Grafana error popup: a failure is shown inside the picker (see catch).
+      const sites = await datasource.getResource('sites', undefined, { showErrorAlert: false });
       const siteOptions = sites.map((site: { name: string; id: string }) => ({
         label: site.name,
         value: site.id,

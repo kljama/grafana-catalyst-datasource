@@ -94,3 +94,44 @@ func TestCheckHealth_WrongPassword(t *testing.T) {
 		t.Fatalf("want a token error, got %v: %s", res.Status, res.Message)
 	}
 }
+
+// TestSiteList_FallsBackToSmallerPages: a system whose site service fails on
+// pages of 500 (502 from the API gateway) still delivers the site list.
+func TestSiteList_FallsBackToSmallerPages(t *testing.T) {
+	f := newFakeCC(t)
+	f.BadGatewayAboveLimit[epSites] = 100
+
+	res := checkHealth(t, f, "sites-fallback")
+	if res.Status != backend.HealthStatusOk || strings.Contains(res.Message, "Warning") {
+		t.Fatalf("want a clean OK, got %v: %s", res.Status, res.Message)
+	}
+	var limits []string
+	for _, r := range f.Requests(epSites) {
+		limits = append(limits, r.Query.Get("limit"))
+	}
+	if strings.Join(limits, ",") != "500,100" {
+		t.Errorf("site page sizes = %v, want [500 100]", limits)
+	}
+}
+
+// TestIssueSiteNames_WithoutSiteList: when the site list is unavailable, the
+// issues table takes site names from the issue's siteName/siteHierarchy
+// instead of showing site UUIDs.
+func TestIssueSiteNames_WithoutSiteList(t *testing.T) {
+	f := newFakeCC(t)
+	f.SetStatus(epSites, http.StatusBadGateway)
+
+	dr := f.runQuery(t, NewDatasource(), "names-without-sites", map[string]any{"queryType": "assuranceIssues", "limit": 25})
+	if dr.Error != nil {
+		t.Fatalf("query error: %v", dr.Error)
+	}
+	names := fieldValues(t, dr, "Site Name")
+	parents := fieldValues(t, dr, "Parent Site")
+	wantNames := []string{"Floor 1", "HQ", "Floor 1", "Graz"}
+	wantParents := []string{"HQ", "Wien", "HQ", "Österreich"}
+	for i := range wantNames {
+		if names[i] != wantNames[i] || parents[i] != wantParents[i] {
+			t.Errorf("row %d: site %v / parent %v, want %s / %s", i, names[i], parents[i], wantNames[i], wantParents[i])
+		}
+	}
+}

@@ -242,6 +242,10 @@ Reported on a real Catalyst Center 3.1.6: "Save & test" failed with `site endpoi
 
 - [x] Resource errors are JSON (`{"message": ...}`), so Grafana shows the cause instead of a JSON parse error. The site picker shows load errors (L22, pulled forward from WP5.5).
 
+- [x] The same 3.1.6 system also answers `v1/sites?limit=500` with 502. The site list now retries a failing page with 100, then 25 sites (`TestSiteList_FallsBackToSmallerPages`).
+- [x] Site Name and Parent Site in the issues table come from the issue's `siteName`/`siteHierarchy` first (part of WP2.3 and L4), so names show without the site list (`TestIssueSiteNames_WithoutSiteList`).
+- [x] The site picker requests sites with `showErrorAlert: false`; its inline error replaces the Grafana popup.
+
 **Done when:** `TestCheckHealth_Catalyst316` (fake with `v2/site` answering 502) passes; on the previous code it fails with the reported error.
 
 #### WP1.5 Release 1.0.6

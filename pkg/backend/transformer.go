@@ -69,25 +69,36 @@ func IssueResponseToDataFrame(
 			return 0
 		}
 
+		// Site names come from the issue itself (siteName, siteHierarchy such as
+		// "Global/Area/Building/Floor"). The site list is only a fallback, so names
+		// still show when it is unavailable.
 		siteIDValue := getStr("siteId")
-		siteNameValue := siteIDValue // Fallback to ID.
-		parentSiteNameValue := ""      // Default to empty string
-		var site Site
-		var parentSite Site
-		// Use the translator to get the site and its parent.
-		site, err := siteTranslator.GetSiteByID(ctx, siteIDValue)
-		if err == nil {
-			siteNameValue = site.Name
-			if site.ParentID != "" {
-				parentSite, err = siteTranslator.GetSiteByID(ctx, site.ParentID)
-				if err == nil {
-					parentSiteNameValue = parentSite.Name
-				} else {
-					log.DefaultLogger.Warn("failed to resolve parent site ID to name", "parentSiteId", site.ParentID, "err", err)
-				}
+		siteNameValue := getStr("siteName")
+		parentSiteNameValue := ""
+		if hierarchy := strings.Split(getStr("siteHierarchy"), "/"); len(hierarchy) > 0 && hierarchy[0] != "" {
+			if siteNameValue == "" {
+				siteNameValue = hierarchy[len(hierarchy)-1]
 			}
-		} else {
-			log.DefaultLogger.Warn("failed to resolve site ID to name", "siteId", siteIDValue, "err", err)
+			if len(hierarchy) >= 2 {
+				parentSiteNameValue = hierarchy[len(hierarchy)-2]
+			}
+		}
+		if siteNameValue == "" || parentSiteNameValue == "" {
+			if site, err := siteTranslator.GetSiteByID(ctx, siteIDValue); err == nil {
+				if siteNameValue == "" {
+					siteNameValue = site.Name
+				}
+				if parentSiteNameValue == "" && site.ParentID != "" {
+					if parentSite, err := siteTranslator.GetSiteByID(ctx, site.ParentID); err == nil {
+						parentSiteNameValue = parentSite.Name
+					}
+				}
+			} else {
+				log.DefaultLogger.Debug("site not in the site list", "siteId", siteIDValue, "err", err)
+			}
+		}
+		if siteNameValue == "" {
+			siteNameValue = siteIDValue // last resort: show the ID
 		}
 
 		r := row{

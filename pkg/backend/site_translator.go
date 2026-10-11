@@ -83,44 +83,30 @@ func (st *SiteTranslator) refresh(ctx context.Context) error {
 		return fmt.Errorf("token for site lookup: %w", err)
 	}
 
+	// Page sizes to try. 500 is the documented maximum, but some Catalyst Center
+	// systems answer large pages with a gateway error (502/503/504); then the
+	// same page is requested again with the next smaller size.
+	pageSizes := []int{500, 100, 25}
+	sizeIdx := 0
+	offset := 1 // API is 1-based
+
 	var allSites []Site
-	limit := 500 // Fetch 500 sites per page as per API docs
-	offset := 1  // API is 1-based
-
 	for {
-		params := url.Values{}
-		params.Set("limit", strconv.Itoa(limit))
-		params.Set("offset", strconv.Itoa(offset))
-		reqURL := siteURL + "?" + params.Encode()
-
-		httpReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-		httpReq.Header.Set("X-Auth-Token", token)
-		httpReq.Header.Set("Accept", "application/json")
-
-		httpResp, err := st.httpClient.Do(httpReq)
+		limit := pageSizes[sizeIdx]
+		page, status, err := st.fetchSitePage(ctx, siteURL, token, offset, limit)
 		if err != nil {
-			return fmt.Errorf("site request failed on page offset %d: %w", offset, err)
+			if isGatewayStatus(status) && sizeIdx < len(pageSizes)-1 {
+				sizeIdx++
+				log.DefaultLogger.Warn("Site page failed with a gateway error, retrying with a smaller page", "status", status, "offset", offset, "limit", pageSizes[sizeIdx])
+				continue
+			}
+			return err
 		}
-
-		if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-			body, _ := io.ReadAll(httpResp.Body)
-			httpResp.Body.Close()
-			return fmt.Errorf("site endpoint returned %s: %s", httpResp.Status, string(body))
-		}
-
-		var envelope SiteEnvelope
-		if err := json.NewDecoder(httpResp.Body).Decode(&envelope); err != nil {
-			httpResp.Body.Close()
-			return fmt.Errorf("failed to decode site response: %w", err)
-		}
-		httpResp.Body.Close()
-
-		allSites = append(allSites, envelope.Response...)
-
-		if len(envelope.Response) < limit {
+		allSites = append(allSites, page...)
+		if len(page) < limit {
 			break // This was the last page
 		}
-		offset += limit
+		offset += len(page)
 	}
 
 	// Rebuild the caches
@@ -141,6 +127,44 @@ func (st *SiteTranslator) refresh(ctx context.Context) error {
 
 	log.DefaultLogger.Info("Site cache refreshed successfully", "sites_loaded", len(allSites))
 	return nil
+}
+
+// fetchSitePage requests one page of the site list. It returns the HTTP status
+// (0 if no response arrived) so that callers can react to gateway errors.
+func (st *SiteTranslator) fetchSitePage(ctx context.Context, siteURL, token string, offset, limit int) ([]Site, int, error) {
+	params := url.Values{}
+	params.Set("limit", strconv.Itoa(limit))
+	params.Set("offset", strconv.Itoa(offset))
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, siteURL+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	httpReq.Header.Set("X-Auth-Token", token)
+	httpReq.Header.Set("Accept", "application/json")
+
+	httpResp, err := st.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, 0, fmt.Errorf("site request failed on page offset %d: %w", offset, err)
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(httpResp.Body, 500))
+		return nil, httpResp.StatusCode, fmt.Errorf("site endpoint returned %s (limit=%d, offset=%d): %s", httpResp.Status, limit, offset, strings.TrimSpace(string(body)))
+	}
+
+	var envelope SiteEnvelope
+	if err := json.NewDecoder(httpResp.Body).Decode(&envelope); err != nil {
+		return nil, httpResp.StatusCode, fmt.Errorf("failed to decode site response: %w", err)
+	}
+	return envelope.Response, httpResp.StatusCode, nil
+}
+
+// isGatewayStatus reports whether status is a gateway error that a smaller
+// request may avoid.
+func isGatewayStatus(status int) bool {
+	return status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
 }
 
 // GetSiteByID retrieves a full Site object by its ID.

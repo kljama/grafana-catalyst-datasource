@@ -95,6 +95,11 @@ type fakeCC struct {
 	Prefix    string // path prefix the API is mounted under, e.g. "/proxy/dnac" (reverse proxy)
 	LimitMode fakeLimitMode
 
+	// BadGatewayAboveLimit makes an endpoint answer 502 with the API gateway's
+	// message for pages larger than the given limit. This mimics a Catalyst
+	// Center 3.1.6 system whose site service fails on large pages.
+	BadGatewayAboveLimit map[fakeEndpoint]int
+
 	Sites            []fakeSite
 	Issues           []map[string]any
 	HealthSummaries  []map[string]any // nil: generated from Sites
@@ -148,14 +153,15 @@ const fakeIssueTime int64 = 1760000000000
 func newFakeCC(t *testing.T) *fakeCC {
 	t.Helper()
 	f := &fakeCC{
-		t:           t,
-		Username:    "admin",
-		Password:    "secret",
-		Sites:       fakeDefaultSites(),
-		tokens:      map[string]bool{},
-		status:      map[fakeEndpoint]int{},
-		html:        map[fakeEndpoint]bool{},
-		rateLimited: map[fakeEndpoint]int{},
+		t:                    t,
+		BadGatewayAboveLimit: map[fakeEndpoint]int{},
+		Username:             "admin",
+		Password:             "secret",
+		Sites:                fakeDefaultSites(),
+		tokens:               map[string]bool{},
+		status:               map[fakeEndpoint]int{},
+		html:                 map[fakeEndpoint]bool{},
+		rateLimited:          map[fakeEndpoint]int{},
 	}
 	f.Issues = f.defaultIssues()
 	f.srv = httptest.NewServer(f)
@@ -472,6 +478,10 @@ func (f *fakeCC) paging(w http.ResponseWriter, ep fakeEndpoint, q url.Values) (o
 			return 0, 0, false
 		}
 		offset = n
+	}
+	if max, ok := f.BadGatewayAboveLimit[ep]; ok && limit > max {
+		writeFakeJSON(w, http.StatusBadGateway, map[string]any{"message": "An invalid response was received from the upstream server"})
+		return 0, 0, false
 	}
 	switch f.LimitMode {
 	case limitStrict:
