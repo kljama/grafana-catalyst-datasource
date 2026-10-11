@@ -1,0 +1,24 @@
+{
+  "name": "v1x-mac",
+  "source": "Saved by the v1.0.4/v1.0.5 query editor",
+  "description": "MAC address filter; the field name and type are unchanged since v1.0.x.",
+  "query": {
+    "datasource": {
+      "type": "grafana-catalyst-datasource",
+      "uid": "catalyst"
+    },
+    "refId": "A",
+    "queryType": "alerts",
+    "macAddress": "68:ca:e4:79:3f:20",
+    "limit": 25,
+    "enrich": false
+  },
+  "expect": {
+    "params": {
+      "macAddress": [
+        "68:ca:e4:79:3f:20"
+      ]
+    },
+    "maxRows": 25
+  }
+}

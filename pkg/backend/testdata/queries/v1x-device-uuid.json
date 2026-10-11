@@ -1,0 +1,29 @@
+{
+  "name": "v1x-device-uuid",
+  "source": "Saved by the v1.0.4/v1.0.5 query editor",
+  "pending": "WP1.3",
+  "description": "Legacy deviceId holding a device UUID maps to networkDeviceId (decision D2).",
+  "query": {
+    "datasource": {
+      "type": "grafana-catalyst-datasource",
+      "uid": "catalyst"
+    },
+    "refId": "A",
+    "queryType": "alerts",
+    "deviceId": "00000000-0000-4000-8000-000000000101",
+    "limit": 25,
+    "enrich": false
+  },
+  "expect": {
+    "params": {
+      "networkDeviceId": [
+        "00000000-0000-4000-8000-000000000101"
+      ]
+    },
+    "absentParams": [
+      "deviceId",
+      "networkDeviceIpAddress"
+    ],
+    "maxRows": 25
+  }
+}

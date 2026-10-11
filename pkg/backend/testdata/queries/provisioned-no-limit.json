@@ -1,0 +1,24 @@
+{
+  "name": "provisioned-no-limit",
+  "source": "Provisioned or API-created query without a limit",
+  "pending": "WP2.5",
+  "description": "A missing limit uses DefaultIssueLimit = 100 (decision D1). Today the backend uses 1000.",
+  "query": {
+    "refId": "A",
+    "queryType": "assuranceIssues"
+  },
+  "expect": {
+    "absentParams": [
+      "siteId",
+      "siteHierarchyId",
+      "status",
+      "priority",
+      "networkDeviceId",
+      "networkDeviceIpAddress",
+      "macAddress",
+      "aiDriven",
+      "isGlobal"
+    ],
+    "rows": 100
+  }
+}

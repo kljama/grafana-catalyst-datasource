@@ -1,0 +1,28 @@
+{
+  "name": "handedited-status-severity-alias",
+  "source": "Hand-edited JSON using the v1.0.x alias fields",
+  "pending": "WP1.3",
+  "description": "String aliases 'status' and 'severity' that the v1.0.x backend accepted.",
+  "query": {
+    "datasource": {
+      "type": "grafana-catalyst-datasource",
+      "uid": "catalyst"
+    },
+    "refId": "A",
+    "queryType": "alerts",
+    "status": "RESOLVED",
+    "severity": "P3",
+    "limit": 25
+  },
+  "expect": {
+    "params": {
+      "status": [
+        "resolved"
+      ],
+      "priority": [
+        "P3"
+      ]
+    },
+    "maxRows": 25
+  }
+}

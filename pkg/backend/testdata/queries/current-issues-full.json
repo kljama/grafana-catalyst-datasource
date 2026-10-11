@@ -1,0 +1,52 @@
+{
+  "name": "current-issues-full",
+  "source": "Saved by the current (pre-1.0.6) query editor",
+  "pending": "WP1.1",
+  "description": "Full current shape. aiDriven/isGlobal false mean 'no filter'. Limit 100 needs pages of at most 25 (review C1).",
+  "query": {
+    "datasource": {
+      "type": "grafana-catalyst-datasource",
+      "uid": "catalyst"
+    },
+    "refId": "A",
+    "queryType": "assuranceIssues",
+    "limit": 100,
+    "priority": [],
+    "status": [
+      "ACTIVE"
+    ],
+    "networkDeviceId": "",
+    "macAddress": "",
+    "siteId": [
+      "00000000-0000-4000-8000-000000000004"
+    ],
+    "siteName": [
+      "HQ"
+    ],
+    "issueName": "",
+    "enrich": false,
+    "siteType": "",
+    "parentSiteName": "",
+    "parentSiteId": "",
+    "metrics": [],
+    "aiDriven": false,
+    "isGlobal": false
+  },
+  "expect": {
+    "params": {
+      "status": [
+        "active"
+      ]
+    },
+    "sites": [
+      "00000000-0000-4000-8000-000000000004"
+    ],
+    "absentParams": [
+      "aiDriven",
+      "isGlobal",
+      "networkDeviceId",
+      "macAddress"
+    ],
+    "rows": 100
+  }
+}

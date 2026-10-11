@@ -1,0 +1,33 @@
+{
+  "name": "v1x-priority-status",
+  "source": "Saved by the v1.0.4/v1.0.5 query editor",
+  "pending": "WP1.3",
+  "description": "Priority list plus the legacy single issueStatus field (review C3: issueStatus is silently dropped today).",
+  "query": {
+    "datasource": {
+      "type": "grafana-catalyst-datasource",
+      "uid": "catalyst"
+    },
+    "refId": "A",
+    "queryType": "alerts",
+    "priority": [
+      "P1",
+      "P2"
+    ],
+    "issueStatus": "ACTIVE",
+    "limit": 25,
+    "enrich": false
+  },
+  "expect": {
+    "params": {
+      "priority": [
+        "P1",
+        "P2"
+      ],
+      "status": [
+        "active"
+      ]
+    },
+    "maxRows": 25
+  }
+}
