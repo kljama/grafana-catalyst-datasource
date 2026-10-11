@@ -33,8 +33,14 @@ export interface CatalystQuery extends DataQuery {
   siteName?: string[];
   parentSiteId?: string;
   metrics?: string[];
-  aiDriven?: boolean;
+  /**
+   * true: only AI-driven issues; false or undefined: no filter.
+   * 'false' (saved by v1.0.x): only issues that are not AI-driven.
+   */
+  aiDriven?: boolean | 'false';
   isGlobal?: boolean;
+  /** Legacy device filter saved by v1.0.x; see migrateQuery. */
+  deviceId?: string;
 }
 
 /**

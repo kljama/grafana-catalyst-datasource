@@ -20,6 +20,7 @@ import {
   type CatalystVariableQuery,
 } from './types';
 import { parseError } from './errors';
+import { migrateQuery } from './migrations';
 import { logger } from './logger';
 
 type InstanceSettings = DataSourceInstanceSettings<CatalystJsonData>;
@@ -54,23 +55,26 @@ export class DataSource extends DataSourceWithBackend<CatalystQuery, CatalystJso
   }
 
   // applyTemplateVariables is a required method that Grafana uses to substitute
-  // template variables into a query before sending it to the backend.
+  // template variables into a query before sending it to the backend. It also runs
+  // for Explore links (interpolateVariablesInQueries).
+  //
+  // Missing fields must stay undefined: templateSrv.replace(undefined) returns '',
+  // and the backend expects lists for siteId/siteName.
   applyTemplateVariables(query: CatalystQuery, scopedVars: ScopedVars): CatalystQuery {
     const templateSrv = getTemplateSrv();
-    const replaceValue = (val: string | string[] | undefined) => {
-      if (Array.isArray(val)) {
-        return val.map((v) => templateSrv.replace(v, scopedVars));
-      }
-      return templateSrv.replace(val as string | undefined, scopedVars);
-    };
+    const q = migrateQuery(query);
+    const replaceString = (val: string | undefined) =>
+      val === undefined ? undefined : templateSrv.replace(val, scopedVars);
+    const replaceList = (val: string[] | undefined) =>
+      val === undefined ? undefined : val.map((v) => templateSrv.replace(v, scopedVars)).filter((v) => v !== '');
 
     return {
-      ...query,
-      siteId: replaceValue(query.siteId) as any,
-      networkDeviceId: templateSrv.replace(query.networkDeviceId, scopedVars),
-      macAddress: templateSrv.replace(query.macAddress, scopedVars),
-      parentSiteName: templateSrv.replace(query.parentSiteName, scopedVars),
-      siteName: replaceValue(query.siteName) as any,
+      ...q,
+      siteId: replaceList(q.siteId),
+      siteName: replaceList(q.siteName),
+      networkDeviceId: replaceString(q.networkDeviceId),
+      macAddress: replaceString(q.macAddress),
+      parentSiteName: replaceString(q.parentSiteName),
     };
   }
 
