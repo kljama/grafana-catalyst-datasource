@@ -72,7 +72,7 @@ func TestBuildAssuranceParamsFromQuery(t *testing.T) {
 		"macAddress":      []string{"00:11:22:33:44:55"},
 		"priority":        []string{"P2"},
 		"status":          []string{"resolved"},
-		"limit":           []string{"100"},
+		"limit":           []string{"25"}, // clamped to the API maximum
 		"offset":          []string{"1"},
 		"startTime":       []string{"1700000000000"},
 		"endTime":         []string{"1700003600000"},
@@ -95,8 +95,8 @@ func TestBuildAssuranceParams_SkipEmpties(t *testing.T) {
 	if params.Get("priority") != "P3" {
 		t.Fatalf("priority = %q, want P3", params.Get("priority"))
 	}
-	if params.Get("limit") != "100" { // default page size
-		t.Fatalf("limit = %q, want 100", params.Get("limit"))
+	if params.Get("limit") != "25" { // default page size = API maximum
+		t.Fatalf("limit = %q, want 25", params.Get("limit"))
 	}
 	if params.Get("offset") != "1" {
 		t.Fatalf("offset = %q, want 1", params.Get("offset"))

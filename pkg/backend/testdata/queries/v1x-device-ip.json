@@ -1,0 +1,28 @@
+{
+  "name": "v1x-device-ip",
+  "source": "Saved by the v1.0.4/v1.0.5 query editor",
+  "description": "Legacy deviceId holding an IP address maps to networkDeviceIpAddress (decision D2).",
+  "query": {
+    "datasource": {
+      "type": "grafana-catalyst-datasource",
+      "uid": "catalyst"
+    },
+    "refId": "A",
+    "queryType": "alerts",
+    "deviceId": "10.10.20.5",
+    "limit": 25,
+    "enrich": false
+  },
+  "expect": {
+    "params": {
+      "networkDeviceIpAddress": [
+        "10.10.20.5"
+      ]
+    },
+    "absentParams": [
+      "deviceId",
+      "networkDeviceId"
+    ],
+    "maxRows": 25
+  }
+}

@@ -570,7 +570,7 @@ describe('QueryEditor', () => {
       render(<QueryEditor {...defaultProps} />);
       
       // AsyncSelect should load options when opened
-      expect(mockDatasource.getResource).toHaveBeenCalledWith('sites');
+      expect(mockDatasource.getResource).toHaveBeenCalledWith('sites', undefined, { showErrorAlert: false });
     });
 
     it('should handle errors when loading sites', async () => {
@@ -592,6 +592,25 @@ describe('QueryEditor', () => {
         );
       });
       
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should show the load error in the site picker', async () => {
+      jest.useRealTimers();
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      // jsdom lacks IntersectionObserver, which the Grafana select menu uses.
+      (global as any).IntersectionObserver ??= class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      };
+      // Grafana rejects resource calls with the parsed JSON body in `data`.
+      mockDatasource.getResource.mockRejectedValue({ data: { message: 'site endpoint returned 502 Bad Gateway' } });
+
+      render(<QueryEditor {...defaultProps} />);
+      fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: 'H' } });
+
+      expect(await screen.findByText(/Could not load sites: site endpoint returned 502 Bad Gateway/)).toBeInTheDocument();
       consoleErrorSpy.mockRestore();
     });
   });

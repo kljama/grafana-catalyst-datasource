@@ -117,22 +117,22 @@ func TestClient_FetchAllIssues_Pagination(t *testing.T) {
 
 		switch offset {
 		case "1":
-			// First page: 50 issues (full page)
-			issues := make([]map[string]any, 50)
-			for i := 0; i < 50; i++ {
+			// First page: 25 issues (full page at the API maximum)
+			issues := make([]map[string]any, 25)
+			for i := 0; i < 25; i++ {
 				issues[i] = map[string]any{
-					"issueId": "issue-" + string(rune(i+1)),
-					"name":    "Issue " + string(rune(i+1)),
+					"issueId": "issue-" + strconv.Itoa(i+1),
+					"name":    "Issue " + strconv.Itoa(i+1),
 				}
 			}
 			response.Response = issues
-		case "51":
-			// Second page: 30 issues (partial page, should stop pagination)
-			issues := make([]map[string]any, 30)
-			for i := 0; i < 30; i++ {
+		case "26":
+			// Second page: 10 issues (partial page, should stop pagination)
+			issues := make([]map[string]any, 10)
+			for i := 0; i < 10; i++ {
 				issues[i] = map[string]any{
-					"issueId": "issue-" + string(rune(i+51)),
-					"name":    "Issue " + string(rune(i+51)),
+					"issueId": "issue-" + strconv.Itoa(i+26),
+					"name":    "Issue " + strconv.Itoa(i+26),
 				}
 			}
 			response.Response = issues
@@ -172,9 +172,9 @@ func TestClient_FetchAllIssues_Pagination(t *testing.T) {
 		t.Fatalf("expected no error, got: %v", err)
 	}
 
-	// Should get 50 (page 1) + 30 (page 2) = 80 issues
-	if len(issues) != 80 {
-		t.Fatalf("expected 80 issues from 2 pages, got: %d", len(issues))
+	// Should get 25 (page 1) + 10 (page 2) = 35 issues
+	if len(issues) != 35 {
+		t.Fatalf("expected 35 issues from 2 pages, got: %d", len(issues))
 	}
 
 	// Should have made 2 API calls (page 1 and page 2)
@@ -475,14 +475,14 @@ func TestClient_FetchAllIssues_HardLimit(t *testing.T) {
 		t.Fatalf("expected no error, got: %v", err)
 	}
 
-	// Should get exactly 75 issues (50 from page 1, 25 from page 2)
+	// Should get exactly 75 issues (3 full pages of 25)
 	if len(issues) != 75 {
 		t.Fatalf("expected 75 issues (hard limit), got: %d", len(issues))
 	}
 
-	// Should have made 2 API calls (page 1 full, page 2 partial)
-	if callCount != 2 {
-		t.Fatalf("expected 2 API calls, got: %d", callCount)
+	// Should have made 3 API calls, then stopped at the hard limit
+	if callCount != 3 {
+		t.Fatalf("expected 3 API calls, got: %d", callCount)
 	}
 }
 
@@ -756,5 +756,34 @@ func TestClient_FetchIssuesPage_ResponseWithoutEnvelope(t *testing.T) {
 
 	if issues[0]["issueId"] != "issue-1" {
 		t.Fatalf("expected issue-1, got: %v", issues[0]["issueId"])
+	}
+}
+
+// TestFetchAllIssues_PageSizeWithinAPILimit covers review issue C1: the
+// assuranceIssues API accepts a limit of at most 25. A server that rejects
+// larger pages (strict) and one that caps them (cap) must both return all rows.
+func TestFetchAllIssues_PageSizeWithinAPILimit(t *testing.T) {
+	for _, mode := range []fakeLimitMode{limitStrict, limitCap} {
+		f := newFakeCC(t)
+		f.LimitMode = mode
+		f.addIssues(146, f.site("Global/Österreich/Wien/HQ")) // 150 issues in total
+
+		dr := f.runQuery(t, NewDatasource(), "page-size", map[string]any{"queryType": "assuranceIssues", "limit": 100})
+		if dr.Error != nil {
+			t.Fatalf("mode %d: query error: %v", mode, dr.Error)
+		}
+		if got := frameRows(dr); got != 100 {
+			t.Errorf("mode %d: rows = %d, want 100", mode, got)
+		}
+		var offsets []string
+		for _, r := range f.Requests(epIssues) {
+			if l, _ := strconv.Atoi(r.Query.Get("limit")); l < 1 || l > 25 {
+				t.Errorf("mode %d: request limit %q outside 1..25", mode, r.Query.Get("limit"))
+			}
+			offsets = append(offsets, r.Query.Get("offset"))
+		}
+		if strings.Join(offsets, ",") != "1,26,51,76" {
+			t.Errorf("mode %d: offsets = %v, want [1 26 51 76]", mode, offsets)
+		}
 	}
 }

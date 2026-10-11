@@ -28,10 +28,13 @@ func NewClient(httpClient *http.Client, tm *tokenManager, inst *dsInstance) *Cli
 	}
 }
 
+// issuesPageSize is the largest `limit` the assuranceIssues API accepts. Every
+// published spec version, including Catalyst Center 3.1.6, allows 1..25.
+const issuesPageSize = 25
+
 // FetchAllIssues retrieves all assurance issues from the API, handling pagination
 // and respecting the specified hard limit.
 func (c *Client) FetchAllIssues(ctx context.Context, issuesURL string, qm QueryModel, hardLimit int64) ([]map[string]any, error) {
-	pageSize := 50 // A reasonable page size
 	allIssues := make([]map[string]any, 0, min(int(hardLimit), 1000))
 
 	// If no sites are selected, run one global query.
@@ -61,7 +64,7 @@ siteQueryLoop:
 				break siteQueryLoop
 			}
 
-			limitForThisPage := pageSize
+			limitForThisPage := issuesPageSize
 			remaining := int(hardLimit - int64(len(allIssues)))
 			if remaining < limitForThisPage {
 				limitForThisPage = remaining
@@ -89,11 +92,13 @@ siteQueryLoop:
 			allIssues = append(allIssues, issues...)
 			log.DefaultLogger.Info("Total issues collected so far", "count", len(allIssues))
 
-			if len(issues) < pageSize {
-				log.DefaultLogger.Info("Received fewer issues than page size, ending pagination for this site.", "siteId", siteID, "count", len(issues), "pageSize", pageSize)
+			// A short page is the last one. Compare against what was requested,
+			// not the page size: the last page before the hard limit asks for less.
+			if len(issues) < limitForThisPage {
+				log.DefaultLogger.Info("Received fewer issues than requested, ending pagination for this site.", "siteId", siteID, "count", len(issues), "requested", limitForThisPage)
 				break
 			}
-			offsetForSite += pageSize
+			offsetForSite += len(issues)
 		}
 	}
 

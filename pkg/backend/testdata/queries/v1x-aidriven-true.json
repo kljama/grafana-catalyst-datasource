@@ -1,0 +1,24 @@
+{
+  "name": "v1x-aidriven-true",
+  "source": "Saved by the v1.0.4/v1.0.5 query editor",
+  "description": "aiDriven saved as the string 'true' (review C3: fails with 'invalid query model' today).",
+  "query": {
+    "datasource": {
+      "type": "grafana-catalyst-datasource",
+      "uid": "catalyst"
+    },
+    "refId": "A",
+    "queryType": "alerts",
+    "aiDriven": "true",
+    "limit": 25,
+    "enrich": false
+  },
+  "expect": {
+    "params": {
+      "aiDriven": [
+        "true"
+      ]
+    },
+    "maxRows": 25
+  }
+}

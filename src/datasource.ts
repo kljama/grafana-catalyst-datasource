@@ -20,13 +20,15 @@ import {
   type CatalystVariableQuery,
 } from './types';
 import { parseError } from './errors';
+import { migrateQuery } from './migrations';
 import { logger } from './logger';
 
 type InstanceSettings = DataSourceInstanceSettings<CatalystJsonData>;
 
 // PAGE_SIZE: Number of rows to fetch per page when populating template variables.
+// The assuranceIssues API accepts at most 25 per request, and its offset starts at 1.
 // MAX_PAGES: Maximum number of pages to fetch (prevents excessive API calls).
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 25;
 const MAX_PAGES = 5; // variable helper only
 
 export class DataSource extends DataSourceWithBackend<CatalystQuery, CatalystJsonData> {
@@ -53,23 +55,26 @@ export class DataSource extends DataSourceWithBackend<CatalystQuery, CatalystJso
   }
 
   // applyTemplateVariables is a required method that Grafana uses to substitute
-  // template variables into a query before sending it to the backend.
+  // template variables into a query before sending it to the backend. It also runs
+  // for Explore links (interpolateVariablesInQueries).
+  //
+  // Missing fields must stay undefined: templateSrv.replace(undefined) returns '',
+  // and the backend expects lists for siteId/siteName.
   applyTemplateVariables(query: CatalystQuery, scopedVars: ScopedVars): CatalystQuery {
     const templateSrv = getTemplateSrv();
-    const replaceValue = (val: string | string[] | undefined) => {
-      if (Array.isArray(val)) {
-        return val.map((v) => templateSrv.replace(v, scopedVars));
-      }
-      return templateSrv.replace(val as string | undefined, scopedVars);
-    };
+    const q = migrateQuery(query);
+    const replaceString = (val: string | undefined) =>
+      val === undefined ? undefined : templateSrv.replace(val, scopedVars);
+    const replaceList = (val: string[] | undefined) =>
+      val === undefined ? undefined : val.map((v) => templateSrv.replace(v, scopedVars)).filter((v) => v !== '');
 
     return {
-      ...query,
-      siteId: replaceValue(query.siteId) as any,
-      networkDeviceId: templateSrv.replace(query.networkDeviceId, scopedVars),
-      macAddress: templateSrv.replace(query.macAddress, scopedVars),
-      parentSiteName: templateSrv.replace(query.parentSiteName, scopedVars),
-      siteName: replaceValue(query.siteName) as any,
+      ...q,
+      siteId: replaceList(q.siteId),
+      siteName: replaceList(q.siteName),
+      networkDeviceId: replaceString(q.networkDeviceId),
+      macAddress: replaceString(q.macAddress),
+      parentSiteName: replaceString(q.parentSiteName),
     };
   }
 
@@ -117,7 +122,7 @@ export class DataSource extends DataSourceWithBackend<CatalystQuery, CatalystJso
     const start = now - 24 * 60 * 60 * 1000;
     const s = (search ?? '').toLowerCase().trim();
 
-    let offset = 0;
+    let offset = 1;
     for (let page = 0; page < MAX_PAGES; page++) {
       const params = new URLSearchParams({
         startTime: String(start),

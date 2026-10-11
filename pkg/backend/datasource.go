@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -123,6 +124,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 			continue
 		}
 		qm.TimeRange = q.TimeRange
+		qm.normalize()
 		log.DefaultLogger.Info("Executing query", "refId", q.RefID, "queryType", qm.QueryType, "limit", qm.Limit)
 		log.DefaultLogger.Debug("Full query model", "query", fmt.Sprintf("%+v", qm))
 
@@ -150,6 +152,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 			if err != nil {
 				dr.Error = err
 			} else {
+				addNotices(frame, qm.notices)
 				dr.Frames = append(dr.Frames, frame)
 			}
 			resp.Responses[q.RefID] = dr
@@ -189,10 +192,25 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 
 		// 4. Transform API response into Grafana data.Frame
 		frame := IssueResponseToDataFrame(ctx, allIssues, q.RefID, q.TimeRange, hardLimit, siteTranslator)
+		addNotices(frame, qm.notices)
 		dr.Frames = append(dr.Frames, frame)
 		resp.Responses[q.RefID] = dr
 	}
 	return resp, nil
+}
+
+// addNotices adds warning notices (for example from QueryModel.normalize) to a
+// result frame.
+func addNotices(frame *data.Frame, notices []string) {
+	if len(notices) == 0 {
+		return
+	}
+	if frame.Meta == nil {
+		frame.Meta = &data.FrameMeta{}
+	}
+	for _, n := range notices {
+		frame.Meta.Notices = append(frame.Meta.Notices, data.Notice{Severity: data.NoticeSeverityWarning, Text: n})
+	}
 }
 
 // querySiteHealth handles the specific logic for the 'siteHealth' query type.
@@ -420,19 +438,57 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 		}, nil
 	}
 
-	// 2. Perform a lightweight API call to the site translator to ensure connectivity.
+	// 2. Probe the assurance issues API: it is what every issue panel needs, so it
+	//    decides pass or fail.
+	if msg, ok := d.probeIssues(ctx, inst, httpClient); !ok {
+		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: msg}, nil
+	}
+
+	// 3. The site list only provides site names and the site picker. A failure is
+	//    reported as a warning, not as a failed check.
 	siteTranslator := d.getSiteTranslator(inst, httpClient)
 	if _, err := siteTranslator.GetAllSites(ctx); err != nil {
 		return &backend.CheckHealthResult{
-			Status:  backend.HealthStatusError,
-			Message: "Health check failed: could not fetch sites. " + err.Error(),
+			Status:  backend.HealthStatusOk,
+			Message: "Connected to Catalyst Center; the assurance issues API works. Warning: the site list is unavailable, so site names and the site picker will not work: " + err.Error(),
 		}, nil
 	}
 
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,
-		Message: "Successfully connected to Catalyst Center and fetched sites.",
+		Message: "Successfully connected to Catalyst Center: assurance issues and site list are available.",
 	}, nil
+}
+
+// probeIssues requests one assurance issue and returns a user-facing error
+// message if that fails.
+func (d *Datasource) probeIssues(ctx context.Context, inst *dsInstance, httpClient *http.Client) (string, bool) {
+	issuesURL, err := IssuesURL(inst.Settings.BaseURL)
+	if err != nil {
+		return "invalid base URL: " + err.Error(), false
+	}
+	tok, err := d.tm.getToken(ctx, inst.UID, inst.Settings, httpClient)
+	if err != nil {
+		return "token error: " + err.Error(), false
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, issuesURL+"?limit=1&offset=1", nil)
+	if err != nil {
+		return "failed to create request: " + err.Error(), false
+	}
+	req.Header.Set("X-Auth-Token", tok)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "assurance issues request failed: " + err.Error(), false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return "", true
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+	if resp.StatusCode == http.StatusNotFound {
+		return "The assurance issues API (/dna/data/api/v1/assuranceIssues) was not found. This plugin requires Catalyst Center 3.1.6 or later.", false
+	}
+	return fmt.Sprintf("assurance issues API returned %s: %s", resp.Status, strings.TrimSpace(string(body))), false
 }
 
 // ---- CallResource ----
@@ -445,47 +501,44 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 	case "issues":
 		inst, err := getInstanceFromPluginContext(req.PluginContext)
 		if err != nil {
-			return sender.Send(&backend.CallResourceResponse{
-				Status: http.StatusInternalServerError,
-				Body:   []byte("failed to get instance settings: " + err.Error()),
-			})
+			return sendResourceError(sender, http.StatusInternalServerError, "failed to get instance settings: " + err.Error())
 		}
 		httpClient := d.httpClientFor(inst.Settings)
 		return d.resourceIssues(ctx, inst, req, sender, httpClient)
 	default:
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusNotFound,
-			Body:   []byte("not found"),
-		})
+		return sendResourceError(sender, http.StatusNotFound, "not found")
 	}
+}
+
+// sendResourceError answers a resource request with a JSON error body. Grafana
+// parses resource responses as JSON and shows the "message" field; a plain-text
+// body surfaces as "Unexpected token ... is not valid JSON" instead.
+func sendResourceError(sender backend.CallResourceResponseSender, status int, msg string) error {
+	body, _ := json.Marshal(map[string]string{"message": msg})
+	return sender.Send(&backend.CallResourceResponse{
+		Status:  status,
+		Body:    body,
+		Headers: map[string][]string{"Content-Type": {"application/json"}},
+	})
 }
 
 // handleSitesRequest fetches all sites using the translator and returns them as JSON.
 func (d *Datasource) handleSitesRequest(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	inst, err := getInstanceFromPluginContext(req.PluginContext)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusInternalServerError,
-			Body:   []byte("failed to get instance settings: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusInternalServerError, "failed to get instance settings: " + err.Error())
 	}
 	httpClient := d.httpClientFor(inst.Settings)
 	siteTranslator := d.getSiteTranslator(inst, httpClient)
 
 	sites, err := siteTranslator.GetAllSites(ctx)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusInternalServerError,
-			Body:   []byte("failed to fetch sites: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusBadGateway, "failed to fetch sites: " + err.Error())
 	}
 
 	body, err := json.Marshal(sites)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusInternalServerError,
-			Body:   []byte("failed to marshal sites to JSON: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusInternalServerError, "failed to marshal sites to JSON: " + err.Error())
 	}
 
 	return sender.Send(&backend.CallResourceResponse{
@@ -495,15 +548,32 @@ func (d *Datasource) handleSitesRequest(ctx context.Context, req *backend.CallRe
 	})
 }
 
+// clampPassthroughPaging keeps the paging parameters of a forwarded issues query
+// within the API contract: limit 1..25 (issuesPageSize) and offset from 1. Other
+// parameters are passed through unchanged.
+func clampPassthroughPaging(rawQuery string) string {
+	vals, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return rawQuery
+	}
+	if v, ok := vals["limit"]; ok && len(v) > 0 {
+		n, _ := strconv.Atoi(v[0])
+		vals.Set("limit", strconv.Itoa(clampLimit(n, issuesPageSize, 1, issuesPageSize)))
+	}
+	if v, ok := vals["offset"]; ok && len(v) > 0 {
+		if n, err := strconv.Atoi(v[0]); err != nil || n < 1 {
+			vals.Set("offset", "1")
+		}
+	}
+	return vals.Encode()
+}
+
 // resourceIssues handles requests to the /issues resource path. It forwards the
 // query parameters from the frontend to the Catalyst Center issues API.
 func (d *Datasource) resourceIssues(ctx context.Context, inst *dsInstance, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender, httpClient *http.Client) error {
 	issuesURL, err := IssuesURL(inst.Settings.BaseURL)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusBadRequest,
-			Body:   []byte("bad baseUrl: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusBadRequest, "bad baseUrl: " + err.Error())
 	}
 
 	var rawQuery string
@@ -515,41 +585,29 @@ func (d *Datasource) resourceIssues(ctx context.Context, inst *dsInstance, req *
 
 	q := ""
 	if rawQuery != "" {
-		q = "?" + rawQuery
+		q = "?" + clampPassthroughPaging(rawQuery)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, issuesURL+q, nil)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusInternalServerError,
-			Body:   []byte("failed to create request: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusInternalServerError, "failed to create request: " + err.Error())
 	}
 
 	tok, err := d.tm.getToken(ctx, inst.UID, inst.Settings, httpClient)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusUnauthorized,
-			Body:   []byte("token: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusBadGateway, "login to Catalyst Center failed: " + err.Error())
 	}
 	httpReq.Header.Set("X-Auth-Token", tok)
 
 	httpResp, err := httpClient.Do(httpReq)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusBadGateway,
-			Body:   []byte("request failed: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusBadGateway, "request failed: " + err.Error())
 	}
 	defer httpResp.Body.Close()
 
 	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusInternalServerError,
-			Body:   []byte("failed to read response: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusInternalServerError, "failed to read response: " + err.Error())
 	}
 
 	return sender.Send(&backend.CallResourceResponse{

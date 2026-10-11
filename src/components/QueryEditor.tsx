@@ -10,6 +10,7 @@ import {
   DEFAULT_QUERY,
   QueryType,
 } from '../types';
+import { migrateQuery } from '../migrations';
 
 // Props: Provided by Grafana plugin system
 type Props = QueryEditorProps<DataSource, CatalystQuery, CatalystJsonData>;
@@ -78,19 +79,23 @@ const queryTypeOptions: Array<SelectableValue<QueryType>> = [
 const QueryEditor: React.FC<Props> = ({ query, onChange, onRunQuery, datasource }) => {
   const { queryType } = query;
 
-  // Unified state for all filters
-  const [filters, setFilters] = useState<Filters>({
-    siteId: query.siteId ?? DEFAULT_QUERY.siteId,
-    networkDeviceId: query.networkDeviceId ?? DEFAULT_QUERY.networkDeviceId,
-    macAddress: query.macAddress ?? DEFAULT_QUERY.macAddress,
-    priority: query.priority ?? DEFAULT_QUERY.priority,
-    status: query.status ?? DEFAULT_QUERY.status,
-    limit: query.limit ?? DEFAULT_QUERY.limit,
-    metrics: query.metrics ?? DEFAULT_QUERY.metrics,
-    parentSiteName: query.parentSiteName ?? DEFAULT_QUERY.parentSiteName,
-    siteName: query.siteName ?? DEFAULT_QUERY.siteName,
-    aiDriven: query.aiDriven ?? DEFAULT_QUERY.aiDriven,
-    isGlobal: query.isGlobal ?? DEFAULT_QUERY.isGlobal,
+  // Unified state for all filters. Saved queries of older versions (v1.0.x) are
+  // migrated first, so list fields are always arrays (see migrations.ts).
+  const [filters, setFilters] = useState<Filters>(() => {
+    const saved = migrateQuery(query);
+    return {
+      siteId: saved.siteId ?? DEFAULT_QUERY.siteId,
+      networkDeviceId: saved.networkDeviceId ?? DEFAULT_QUERY.networkDeviceId,
+      macAddress: saved.macAddress ?? DEFAULT_QUERY.macAddress,
+      priority: saved.priority ?? DEFAULT_QUERY.priority,
+      status: saved.status ?? DEFAULT_QUERY.status,
+      limit: saved.limit ?? DEFAULT_QUERY.limit,
+      metrics: saved.metrics ?? DEFAULT_QUERY.metrics,
+      parentSiteName: saved.parentSiteName ?? DEFAULT_QUERY.parentSiteName,
+      siteName: saved.siteName ?? DEFAULT_QUERY.siteName,
+      aiDriven: saved.aiDriven ?? DEFAULT_QUERY.aiDriven,
+      isGlobal: saved.isGlobal ?? DEFAULT_QUERY.isGlobal,
+    };
   });
 
   // Debounced version of the filters
@@ -101,7 +106,7 @@ const QueryEditor: React.FC<Props> = ({ query, onChange, onRunQuery, datasource 
   const lastSig = useRef<string>('');
   useEffect(() => {
     const next: CatalystQuery = {
-      ...query,
+      ...migrateQuery(query),
       ...debouncedFilters,
     };
     const sig = JSON.stringify(next);
@@ -115,7 +120,8 @@ const QueryEditor: React.FC<Props> = ({ query, onChange, onRunQuery, datasource 
 
   const loadSiteOptions = async (inputValue: string) => {
     try {
-      const sites = await datasource.getResource('sites');
+      // No Grafana error popup: a failure is shown inside the picker (see catch).
+      const sites = await datasource.getResource('sites', undefined, { showErrorAlert: false });
       const siteOptions = sites.map((site: { name: string; id: string }) => ({
         label: site.name,
         value: site.id,
@@ -132,7 +138,10 @@ const QueryEditor: React.FC<Props> = ({ query, onChange, onRunQuery, datasource 
       return filteredSites;
     } catch (error) {
       console.error('Failed to load site options', error);
-      return [];
+      // Show the reason in the picker instead of an empty "No options found".
+      const err = error as { data?: { message?: string }; message?: string };
+      const reason = err?.data?.message ?? err?.message ?? String(error);
+      return [{ label: `Could not load sites: ${reason}`, value: '', isDisabled: true }];
     }
   };
 
@@ -251,7 +260,7 @@ const QueryEditor: React.FC<Props> = ({ query, onChange, onRunQuery, datasource 
           </InlineField>
           <Field label="AI-Driven" description="If enabled, only returns issues identified by the AI engine.">
             <Switch
-              value={!!filters.aiDriven}
+              value={filters.aiDriven === true}
               onChange={(e) => setFilters({ ...filters, aiDriven: e.currentTarget.checked })}
             />
           </Field>

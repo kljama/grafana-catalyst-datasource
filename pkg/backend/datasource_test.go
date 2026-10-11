@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -14,415 +13,173 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
-// ==================== Mock Client ====================
+// ==================== QueryData against the fake Catalyst Center ====================
+//
+// These tests run against fakeCC (fakecc_test.go). They assert behaviour that
+// must stay true after the fixes in ACTION_PLAN.md, not the current request
+// shapes (page size, site filter parameter), which are planned to change.
 
-// mockClient is a mock implementation of the Client for testing datasource.go
-type mockClient struct {
-	// FetchAllIssues mocks
-	fetchAllIssuesFunc func(ctx context.Context, issuesURL string, qm QueryModel, hardLimit int64) ([]map[string]any, error)
-	// FetchAllSiteHealth mocks
-	fetchAllSiteHealthFunc func(ctx context.Context, siteHealthURL *url.URL, qm QueryModel) ([]map[string]any, error)
-}
-
-func (m *mockClient) FetchAllIssues(ctx context.Context, issuesURL string, qm QueryModel, hardLimit int64) ([]map[string]any, error) {
-	if m.fetchAllIssuesFunc != nil {
-		return m.fetchAllIssuesFunc(ctx, issuesURL, qm, hardLimit)
-	}
-	return nil, fmt.Errorf("FetchAllIssues not mocked")
-}
-
-func (m *mockClient) FetchAllSiteHealth(ctx context.Context, siteHealthURL *url.URL, qm QueryModel) ([]map[string]any, error) {
-	if m.fetchAllSiteHealthFunc != nil {
-		return m.fetchAllSiteHealthFunc(ctx, siteHealthURL, qm)
-	}
-	return nil, fmt.Errorf("FetchAllSiteHealth not mocked")
-}
-
-// ==================== Mock SiteTranslator ====================
-
-// mockSiteTranslator is a mock implementation of SiteTranslator for testing datasource.go
-type mockSiteTranslator struct {
-	ensureCacheFunc  func(ctx context.Context) error
-	getSiteNameFunc  func(ctx context.Context, id string) (string, error)
-	getSiteIDFunc    func(ctx context.Context, name string) (string, error)
-	getSiteByIDFunc  func(ctx context.Context, id string) (Site, error)
-	getAllSitesFunc  func(ctx context.Context) ([]Site, error)
-}
-
-func (m *mockSiteTranslator) EnsureCache(ctx context.Context) error {
-	if m.ensureCacheFunc != nil {
-		return m.ensureCacheFunc(ctx)
-	}
-	return nil
-}
-
-func (m *mockSiteTranslator) GetSiteName(ctx context.Context, id string) (string, error) {
-	if m.getSiteNameFunc != nil {
-		return m.getSiteNameFunc(ctx, id)
-	}
-	return "", fmt.Errorf("GetSiteName not mocked")
-}
-
-func (m *mockSiteTranslator) GetSiteID(ctx context.Context, name string) (string, error) {
-	if m.getSiteIDFunc != nil {
-		return m.getSiteIDFunc(ctx, name)
-	}
-	return "", fmt.Errorf("GetSiteID not mocked")
-}
-
-func (m *mockSiteTranslator) GetSiteByID(ctx context.Context, id string) (Site, error) {
-	if m.getSiteByIDFunc != nil {
-		return m.getSiteByIDFunc(ctx, id)
-	}
-	return Site{}, fmt.Errorf("GetSiteByID not mocked")
-}
-
-func (m *mockSiteTranslator) GetAllSites(ctx context.Context) ([]Site, error) {
-	if m.getAllSitesFunc != nil {
-		return m.getAllSitesFunc(ctx)
-	}
-	return nil, fmt.Errorf("GetAllSites not mocked")
-}
-
-// ==================== Integration Tests ====================
-
-// TestDatasource_QueryData_MainFlow verifies the standard QueryData flow:
-// - QueryData processes the request
-// - Returns a response structure
-// Note: This is an integration test that verifies the orchestration logic
+// TestDatasource_QueryData_MainFlow runs an unfiltered issues query end to end.
 func TestDatasource_QueryData_MainFlow(t *testing.T) {
-	ctx := context.Background()
+	f := newFakeCC(t)
 
-	// Create datasource
-	ds := NewDatasource()
-
-	// Build request
-	queryJSON, _ := json.Marshal(map[string]any{
-		"queryType": "assuranceIssues",
-	})
-
-	req := &backend.QueryDataRequest{
-		PluginContext: backend.PluginContext{
-			DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{
-				UID:     "test-instance",
-				JSONData: json.RawMessage(`{"baseUrl": "https://catalyst.example.com"}`),
-				DecryptedSecureJSONData: map[string]string{
-					"username": "testuser",
-					"password": "testpass",
-				},
-			},
-		},
-		Queries: []backend.DataQuery{
-			{
-				RefID: "A",
-				TimeRange: backend.TimeRange{
-					From: time.Now().Add(-1 * time.Hour),
-					To:   time.Now(),
-				},
-				JSON: queryJSON,
-			},
-		},
+	dr := f.runQuery(t, NewDatasource(), "main-flow", map[string]any{"queryType": "assuranceIssues"})
+	if dr.Error != nil {
+		t.Fatalf("unexpected query error: %v", dr.Error)
+	}
+	if got := frameRows(dr); got != len(f.Issues) {
+		t.Fatalf("expected %d rows, got %d", len(f.Issues), got)
+	}
+	ids := fieldValues(t, dr, "Issue ID")
+	priorities := fieldValues(t, dr, "Priority")
+	for i, want := range []string{"P2", "P3", "P2", "P1"} {
+		if ids[i] != fakeUUID(1001+i) {
+			t.Errorf("row %d: Issue ID = %v, want %s", i, ids[i], fakeUUID(1001+i))
+		}
+		if priorities[i] != want {
+			t.Errorf("row %d: Priority = %v, want %s", i, priorities[i], want)
+		}
 	}
 
-	// Call QueryData - it will fail to make HTTP calls but we verify structure
-	resp, err := ds.QueryData(ctx, req)
-	
-	// We expect an error because we can't actually make HTTP calls
-	// but we can verify the structure is correct
-	if err != nil {
-		t.Logf("Expected error in mock environment: %v", err)
-	}
-	
-	if resp == nil {
-		t.Fatal("expected non-nil response")
-	}
-
-	// Verify response contains our query
-	if _, ok := resp.Responses["A"]; !ok {
-		t.Fatal("expected response for RefID 'A'")
+	for _, r := range f.Requests(epIssues) {
+		if r.Token == "" {
+			t.Errorf("issues request without X-Auth-Token: %v", r.Query)
+		}
+		if r.Query.Has("siteId") || r.Query.Has("siteHierarchyId") {
+			t.Errorf("unfiltered query sent a site filter: %v", r.Query)
+		}
 	}
 }
 
-// TestDatasource_QueryData_WithClientError verifies that errors from Client
-// are correctly propagated through QueryData
+// TestDatasource_QueryData_WithClientError verifies that an invalid query model
+// becomes an error on that query's response, not a top-level error.
 func TestDatasource_QueryData_WithClientError(t *testing.T) {
-	ctx := context.Background()
+	f := newFakeCC(t)
 
-	// Since we can't easily inject mocks into the existing Datasource structure,
-	// we'll create a test that verifies the error handling path by examining
-	// the response structure when things fail.
-
-	ds := NewDatasource()
-
-	// Build request with invalid JSON to trigger unmarshaling error
-	req := &backend.QueryDataRequest{
-		PluginContext: backend.PluginContext{
-			DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{
-				UID:     "test-instance",
-				JSONData: json.RawMessage(`{"baseUrl": "https://catalyst.example.com"}`),
-				DecryptedSecureJSONData: map[string]string{
-					"username": "testuser",
-					"password": "testpass",
-				},
-			},
-		},
-		Queries: []backend.DataQuery{
-			{
-				RefID: "A",
-				TimeRange: backend.TimeRange{
-					From: time.Now().Add(-1 * time.Hour),
-					To:   time.Now(),
-				},
-				JSON: []byte(`{invalid json`), // Invalid JSON
-			},
-		},
-	}
-
-	resp, err := ds.QueryData(ctx, req)
-
-	// Should not error at the top level
+	resp, err := NewDatasource().QueryData(context.Background(), &backend.QueryDataRequest{
+		PluginContext: f.pluginContext("client-error"),
+		Queries:       []backend.DataQuery{{RefID: "A", TimeRange: fakeTimeRange, JSON: []byte(`{invalid json`)}},
+	})
 	if err != nil {
-		t.Fatalf("QueryData should not return top-level error, got: %v", err)
+		t.Fatalf("QueryData should not return a top-level error, got: %v", err)
 	}
-
-	// But should have error in the response
-	if resp == nil {
-		t.Fatal("expected non-nil response")
-	}
-
-	dataResp, ok := resp.Responses["A"]
+	dr, ok := resp.Responses["A"]
 	if !ok {
 		t.Fatal("expected response for RefID 'A'")
 	}
-
-	if dataResp.Error == nil {
-		t.Fatal("expected error in DataResponse for invalid JSON")
+	if dr.Error == nil || !strings.Contains(dr.Error.Error(), "invalid query model") {
+		t.Fatalf("expected an 'invalid query model' error, got: %v", dr.Error)
 	}
-
-	if dataResp.Error.Error() == "" {
-		t.Fatal("expected non-empty error message")
+	if n := len(f.Requests(epIssues)); n != 0 {
+		t.Fatalf("expected no issues requests for an invalid query, got %d", n)
 	}
-
-	t.Logf("Correctly caught error: %v", dataResp.Error)
 }
 
-// TestDatasource_QueryData_SiteNameResolution verifies that site name resolution
-// works when SiteName is provided instead of SiteID
+// TestDatasource_QueryData_SiteNameResolution verifies that a site name without
+// a site ID is resolved through the site list and sent as a site filter.
 func TestDatasource_QueryData_SiteNameResolution(t *testing.T) {
-	ctx := context.Background()
+	f := newFakeCC(t)
+	graz := f.site("Global/Österreich/Graz")
 
-	ds := NewDatasource()
-
-	queryJSON, _ := json.Marshal(map[string]any{
+	dr := f.runQuery(t, NewDatasource(), "site-name", map[string]any{
 		"queryType": "assuranceIssues",
-		"siteName":  []string{"Building A"},
+		"siteName":  []string{"Graz"},
 	})
-
-	req := &backend.QueryDataRequest{
-		PluginContext: backend.PluginContext{
-			DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{
-				UID:     "test-instance",
-				JSONData: json.RawMessage(`{"baseUrl": "https://catalyst.example.com"}`),
-				DecryptedSecureJSONData: map[string]string{
-					"username": "testuser",
-					"password": "testpass",
-				},
-			},
-		},
-		Queries: []backend.DataQuery{
-			{
-				RefID: "A",
-				TimeRange: backend.TimeRange{
-					From: time.Now().Add(-1 * time.Hour),
-					To:   time.Now(),
-				},
-				JSON: queryJSON,
-			},
-		},
+	if dr.Error != nil {
+		t.Fatalf("unexpected query error: %v", dr.Error)
 	}
-
-	// This will fail to make HTTP calls, but we can verify the query was accepted
-	resp, _ := ds.QueryData(ctx, req)
-
-	if resp == nil {
-		t.Fatal("expected non-nil response")
+	reqs := f.Requests(epIssues)
+	if len(reqs) == 0 {
+		t.Fatal("expected an issues request")
 	}
-
-	// The response should exist for our query
-	if _, ok := resp.Responses["A"]; !ok {
-		t.Fatal("expected response for RefID 'A'")
+	for _, r := range reqs {
+		if !f.filtersSite(r, graz) {
+			t.Errorf("issues request is not filtered to site Graz: %v", r.Query)
+		}
 	}
 }
 
-// TestDatasource_QueryData_MultipleQueries verifies that multiple queries
-// are handled correctly
+// TestDatasource_QueryData_MultipleQueries verifies that each query in a request
+// gets its own response with its own filters.
 func TestDatasource_QueryData_MultipleQueries(t *testing.T) {
-	ctx := context.Background()
+	f := newFakeCC(t)
+	qa, _ := json.Marshal(map[string]any{"queryType": "assuranceIssues"})
+	qb, _ := json.Marshal(map[string]any{"queryType": "assuranceIssues", "priority": []string{"p1"}})
 
-	ds := NewDatasource()
-
-	queryJSON1, _ := json.Marshal(map[string]any{
-		"queryType": "assuranceIssues",
-	})
-
-	queryJSON2, _ := json.Marshal(map[string]any{
-		"queryType": "assuranceIssues",
-		"priority":  []string{"p1"},
-	})
-
-	req := &backend.QueryDataRequest{
-		PluginContext: backend.PluginContext{
-			DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{
-				UID:     "test-instance",
-				JSONData: json.RawMessage(`{"baseUrl": "https://catalyst.example.com"}`),
-				DecryptedSecureJSONData: map[string]string{
-					"username": "testuser",
-					"password": "testpass",
-				},
-			},
-		},
+	resp, err := NewDatasource().QueryData(context.Background(), &backend.QueryDataRequest{
+		PluginContext: f.pluginContext("multi"),
 		Queries: []backend.DataQuery{
-			{
-				RefID: "A",
-				TimeRange: backend.TimeRange{
-					From: time.Now().Add(-1 * time.Hour),
-					To:   time.Now(),
-				},
-				JSON: queryJSON1,
-			},
-			{
-				RefID: "B",
-				TimeRange: backend.TimeRange{
-					From: time.Now().Add(-2 * time.Hour),
-					To:   time.Now(),
-				},
-				JSON: queryJSON2,
-			},
+			{RefID: "A", TimeRange: fakeTimeRange, JSON: qa},
+			{RefID: "B", TimeRange: fakeTimeRange, JSON: qb},
 		},
-	}
-
-	resp, err := ds.QueryData(ctx, req)
-
+	})
 	if err != nil {
 		t.Fatalf("unexpected top-level error: %v", err)
 	}
-
-	if resp == nil {
-		t.Fatal("expected non-nil response")
-	}
-
-	// Should have responses for both queries
 	if len(resp.Responses) != 2 {
 		t.Fatalf("expected 2 responses, got: %d", len(resp.Responses))
 	}
-
-	if _, ok := resp.Responses["A"]; !ok {
-		t.Fatal("expected response for RefID 'A'")
+	a, b := resp.Responses["A"], resp.Responses["B"]
+	if a.Error != nil || b.Error != nil {
+		t.Fatalf("unexpected errors: A=%v B=%v", a.Error, b.Error)
+	}
+	if got := frameRows(a); got != len(f.Issues) {
+		t.Errorf("A: expected %d rows, got %d", len(f.Issues), got)
+	}
+	if got := frameRows(b); got != 1 {
+		t.Errorf("B: expected 1 P1 row, got %d", got)
 	}
 
-	if _, ok := resp.Responses["B"]; !ok {
-		t.Fatal("expected response for RefID 'B'")
+	sawP1 := false
+	for _, r := range f.Requests(epIssues) {
+		if r.Query.Get("priority") == "P1" {
+			sawP1 = true
+		}
+	}
+	if !sawP1 {
+		t.Error("expected an issues request with priority=P1 (normalized from p1)")
 	}
 }
 
-// TestDatasource_QueryData_SiteHealthFlow verifies the siteHealth query path
+// TestDatasource_QueryData_SiteHealthFlow runs an unfiltered site-health query end to end.
 func TestDatasource_QueryData_SiteHealthFlow(t *testing.T) {
-	ctx := context.Background()
+	f := newFakeCC(t)
 
-	ds := NewDatasource()
-
-	queryJSON, _ := json.Marshal(map[string]any{
-		"queryType": "siteHealth",
-	})
-
-	req := &backend.QueryDataRequest{
-		PluginContext: backend.PluginContext{
-			DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{
-				UID:     "test-instance",
-				JSONData: json.RawMessage(`{"baseUrl": "https://catalyst.example.com"}`),
-				DecryptedSecureJSONData: map[string]string{
-					"username": "testuser",
-					"password": "testpass",
-				},
-			},
-		},
-		Queries: []backend.DataQuery{
-			{
-				RefID: "A",
-				TimeRange: backend.TimeRange{
-					From: time.Now().Add(-1 * time.Hour),
-					To:   time.Now(),
-				},
-				JSON: queryJSON,
-			},
-		},
+	dr := f.runQuery(t, NewDatasource(), "site-health", map[string]any{"queryType": "siteHealth"})
+	if dr.Error != nil {
+		t.Fatalf("unexpected query error: %v", dr.Error)
 	}
-
-	resp, err := ds.QueryData(ctx, req)
-
-	if err != nil {
-		t.Fatalf("unexpected top-level error: %v", err)
+	if frameRows(dr) == 0 {
+		t.Fatal("expected site-health rows")
 	}
-
-	if resp == nil {
-		t.Fatal("expected non-nil response")
+	found := false
+	for _, v := range fieldValues(t, dr, "siteName") {
+		if v == "Wien" {
+			found = true
+		}
 	}
-
-	// Should have response for the query
-	if _, ok := resp.Responses["A"]; !ok {
-		t.Fatal("expected response for RefID 'A'")
+	if !found {
+		t.Error("expected a row for site Wien")
 	}
 }
 
-// TestDatasource_QueryData_LimitHandling verifies that the limit parameter
-// is correctly processed
+// TestDatasource_QueryData_LimitHandling verifies that the query limit caps the
+// number of rows across pages.
 func TestDatasource_QueryData_LimitHandling(t *testing.T) {
-	ctx := context.Background()
+	f := newFakeCC(t)
+	f.addIssues(146, f.site("Global/Österreich/Wien/HQ")) // 150 issues in total
 
-	ds := NewDatasource()
-
-	limit := int64(100)
-	queryJSON, _ := json.Marshal(map[string]any{
-		"queryType": "assuranceIssues",
-		"limit":     limit,
-	})
-
-	req := &backend.QueryDataRequest{
-		PluginContext: backend.PluginContext{
-			DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{
-				UID:     "test-instance",
-				JSONData: json.RawMessage(`{"baseUrl": "https://catalyst.example.com"}`),
-				DecryptedSecureJSONData: map[string]string{
-					"username": "testuser",
-					"password": "testpass",
-				},
-			},
-		},
-		Queries: []backend.DataQuery{
-			{
-				RefID: "A",
-				TimeRange: backend.TimeRange{
-					From: time.Now().Add(-1 * time.Hour),
-					To:   time.Now(),
-				},
-				JSON: queryJSON,
-			},
-		},
-	}
-
-	resp, err := ds.QueryData(ctx, req)
-
-	if err != nil {
-		t.Fatalf("unexpected top-level error: %v", err)
-	}
-
-	if resp == nil {
-		t.Fatal("expected non-nil response")
-	}
-
-	// Verify query was processed (response exists)
-	if _, ok := resp.Responses["A"]; !ok {
-		t.Fatal("expected response for RefID 'A'")
+	for _, limit := range []int{30, 100} {
+		dr := f.runQuery(t, NewDatasource(), fmt.Sprintf("limit-%d", limit), map[string]any{
+			"queryType": "assuranceIssues",
+			"limit":     limit,
+		})
+		if dr.Error != nil {
+			t.Fatalf("limit %d: unexpected query error: %v", limit, dr.Error)
+		}
+		if got := frameRows(dr); got != limit {
+			t.Errorf("limit %d: expected %d rows, got %d", limit, limit, got)
+		}
 	}
 }
 
@@ -657,7 +414,7 @@ func TestDatasource_CallResource_Sites(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"Token": "test-token"}`))
-		case "/dna/intent/api/v2/site":
+		case "/dna/intent/api/v1/sites":
 			if r.Header.Get("X-Auth-Token") != "test-token" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
@@ -809,3 +566,62 @@ func TestFilterSiteHealthData(t *testing.T) {
 	}
 }
 
+// TestDatasource_CallResource_IssuesPagingClamped verifies that the issues
+// passthrough keeps paging within the API contract (WP1.2): the frontend helper
+// used to send offset=0 and limit=100.
+func TestDatasource_CallResource_IssuesPagingClamped(t *testing.T) {
+	f := newFakeCC(t)
+	f.LimitMode = limitStrict
+
+	sender := &mockResourceSender{}
+	err := NewDatasource().CallResource(context.Background(), &backend.CallResourceRequest{
+		Path:          "issues",
+		URL:           "issues?startTime=1&endTime=2&limit=100&offset=0",
+		PluginContext: f.pluginContext("passthrough"),
+	}, sender)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sender.resp == nil || sender.resp.Status != http.StatusOK {
+		t.Fatalf("expected 200 OK, got: %+v", sender.resp)
+	}
+	reqs := f.Requests(epIssues)
+	if len(reqs) != 1 {
+		t.Fatalf("expected 1 issues request, got %d", len(reqs))
+	}
+	q := reqs[0].Query
+	if q.Get("limit") != "25" || q.Get("offset") != "1" || q.Get("startTime") != "1" || q.Get("endTime") != "2" {
+		t.Fatalf("unexpected forwarded query: %v", q)
+	}
+}
+
+// TestDatasource_CallResource_SitesErrorIsJSON: Grafana parses resource bodies as
+// JSON. A plain-text error showed up as "Unexpected token 'i', "failed to fe"...
+// is not valid JSON" in the site picker.
+func TestDatasource_CallResource_SitesErrorIsJSON(t *testing.T) {
+	f := newFakeCC(t)
+	f.SetStatus(epSites, http.StatusBadGateway)
+
+	sender := &mockResourceSender{}
+	if err := NewDatasource().CallResource(context.Background(), &backend.CallResourceRequest{
+		Path:          "sites",
+		PluginContext: f.pluginContext("sites-error"),
+	}, sender); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sender.resp == nil || sender.resp.Status != http.StatusBadGateway {
+		t.Fatalf("expected 502, got: %+v", sender.resp)
+	}
+	var body struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(sender.resp.Body, &body); err != nil {
+		t.Fatalf("error body is not JSON: %v (%s)", err, sender.resp.Body)
+	}
+	if !strings.Contains(body.Message, "site endpoint returned 502") {
+		t.Fatalf("message does not name the cause: %q", body.Message)
+	}
+	if ct := sender.resp.Headers["Content-Type"]; len(ct) == 0 || ct[0] != "application/json" {
+		t.Fatalf("Content-Type = %v, want application/json", ct)
+	}
+}

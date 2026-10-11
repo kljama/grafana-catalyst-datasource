@@ -1,0 +1,29 @@
+{
+  "name": "v1x-no-filters",
+  "source": "Saved by the v1.0.4/v1.0.5 query editor",
+  "description": "Issues panel without filters, as v1.0.x saved it. No siteId key: v1.0.x wrote siteId: undefined.",
+  "query": {
+    "datasource": {
+      "type": "grafana-catalyst-datasource",
+      "uid": "catalyst"
+    },
+    "refId": "A",
+    "queryType": "alerts",
+    "limit": 25,
+    "enrich": false
+  },
+  "expect": {
+    "absentParams": [
+      "siteId",
+      "siteHierarchyId",
+      "status",
+      "priority",
+      "networkDeviceId",
+      "networkDeviceIpAddress",
+      "macAddress",
+      "aiDriven",
+      "isGlobal"
+    ],
+    "rows": 25
+  }
+}

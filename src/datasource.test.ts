@@ -261,6 +261,23 @@ describe('DataSource', () => {
       expect(result[0].value).toBe('site-1');
     });
 
+    it('should page within the API limits (limit <= 25, offset from 1)', async () => {
+      const fullPage = Array.from({ length: 25 }, (_, i) => ({ siteId: `site-${i}` }));
+      (datasource.getResource as jest.Mock)
+        .mockResolvedValueOnce({ response: fullPage })
+        .mockResolvedValueOnce({ response: [{ siteId: 'site-last' }] });
+
+      const result = await datasource.metricFindQuery({ type: 'sites' });
+
+      const calls = (datasource.getResource as jest.Mock).mock.calls.map(([path]) => new URLSearchParams(path.split('?')[1]));
+      expect(calls).toHaveLength(2);
+      expect(calls.map((p) => [p.get('limit'), p.get('offset')])).toEqual([
+        ['25', '1'],
+        ['25', '26'],
+      ]);
+      expect(result).toHaveLength(26);
+    });
+
     it('should throw error if first page fails', async () => {
       (datasource.getResource as jest.Mock).mockRejectedValue(new Error('Network error'));
 

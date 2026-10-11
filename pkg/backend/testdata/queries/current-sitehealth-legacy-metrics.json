@@ -1,0 +1,40 @@
+{
+  "name": "current-sitehealth-legacy-metrics",
+  "source": "Saved by the current (pre-1.2.0) query editor",
+  "pending": "WP4.2",
+  "description": "Site-health query with metric names of the legacy site-health API. 1.2.0 migrates them to siteHealthSummaries names (WP4.2).",
+  "query": {
+    "datasource": {
+      "type": "grafana-catalyst-datasource",
+      "uid": "catalyst"
+    },
+    "refId": "A",
+    "queryType": "siteHealth",
+    "siteType": "BUILDING",
+    "siteId": [],
+    "siteName": [],
+    "metrics": [
+      "clientCount",
+      "numberOfWiredClients",
+      "totalNumberOfActiveWirelessClients",
+      "healthyNetworkDevicePercentage",
+      "accessGoodCount",
+      "switchDeviceTotalCount"
+    ]
+  },
+  "expect": {
+    "params": {
+      "siteType": [
+        "building"
+      ]
+    },
+    "metrics": [
+      "clientCount",
+      "wiredClientCount",
+      "wirelessClientCount",
+      "networkDeviceGoodHealthPercentage",
+      "accessDeviceGoodHealthCount",
+      "switchDeviceCount"
+    ]
+  }
+}

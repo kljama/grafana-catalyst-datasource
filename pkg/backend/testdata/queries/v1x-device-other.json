@@ -1,0 +1,25 @@
+{
+  "name": "v1x-device-other",
+  "source": "Saved by the v1.0.4/v1.0.5 query editor",
+  "description": "Legacy deviceId that is neither a UUID nor an IP is dropped with a frame notice (decision D2).",
+  "query": {
+    "datasource": {
+      "type": "grafana-catalyst-datasource",
+      "uid": "catalyst"
+    },
+    "refId": "A",
+    "queryType": "alerts",
+    "deviceId": "sw-wien-01",
+    "limit": 25,
+    "enrich": false
+  },
+  "expect": {
+    "absentParams": [
+      "deviceId",
+      "networkDeviceId",
+      "networkDeviceIpAddress"
+    ],
+    "notice": "deviceId",
+    "maxRows": 25
+  }
+}

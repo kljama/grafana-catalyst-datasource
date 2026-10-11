@@ -1,0 +1,22 @@
+{
+  "name": "v1x-site-string",
+  "source": "Saved by the v1.0.4/v1.0.5 query editor",
+  "description": "Site filter saved as a single string (review C3: fails with 'invalid query model' today).",
+  "query": {
+    "datasource": {
+      "type": "grafana-catalyst-datasource",
+      "uid": "catalyst"
+    },
+    "refId": "A",
+    "queryType": "alerts",
+    "siteId": "00000000-0000-4000-8000-000000000004",
+    "limit": 25,
+    "enrich": false
+  },
+  "expect": {
+    "sites": [
+      "00000000-0000-4000-8000-000000000004"
+    ],
+    "maxRows": 25
+  }
+}
