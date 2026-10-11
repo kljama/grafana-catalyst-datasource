@@ -240,6 +240,8 @@ Reported on a real Catalyst Center 3.1.6: "Save & test" failed with `site endpoi
 - [x] `SiteURL` uses `GET /dna/intent/api/v1/sites`; `Site` reads `nameHierarchy`, `type` and `siteHierarchyId` as well. The rest of WP3.6 (fetching outside the lock, hierarchy-based name lookup, extended `sites` resource) stays in 1.1.0.
 - [x] CheckHealth: the assurance issues API (`limit=1&offset=1`) decides pass or fail, and a 404 there reports "requires Catalyst Center 3.1.6 or later". A failing site list becomes a warning. The fresh login and the cache bypass of WP3.5 stay in 1.1.0.
 
+- [x] Resource errors are JSON (`{"message": ...}`), so Grafana shows the cause instead of a JSON parse error. The site picker shows load errors (L22, pulled forward from WP5.5).
+
 **Done when:** `TestCheckHealth_Catalyst316` (fake with `v2/site` answering 502) passes; on the previous code it fails with the reported error.
 
 #### WP1.5 Release 1.0.6

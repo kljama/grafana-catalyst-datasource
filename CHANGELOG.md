@@ -19,6 +19,7 @@ Requires Catalyst Center 3.1.6 or later. The backend is built for linux/amd64 on
 - **Explore from an issue panel:** Opening an older issue panel in Explore no longer crashes the query editor.
 - **Save & test on Catalyst Center 3.1.6:** Failed with "site endpoint returned 502 Bad Gateway", because the site list used the deprecated `GET /dna/intent/api/v2/site`. The site list now uses `GET /dna/intent/api/v1/sites`.
 - **Health check:** Now tests the assurance issues API, which every issue panel needs, and reports a missing API as "requires Catalyst Center 3.1.6 or later". A failing site list is shown as a warning instead of failing the check.
+- **Error messages from the plugin backend:** Resource errors (site list, issues passthrough) are now sent as JSON. Grafana shows the real reason instead of "Unexpected token ... is not valid JSON". The site picker shows why sites could not be loaded instead of "No options found".
 - **Template variable helper:** Requests issues with offset 1 and pages of 25, as the API requires. The backend passthrough also corrects out-of-range paging values.
 - **Site Health Real-time Query:** Omit `timestamp` parameter for near real-time queries so Catalyst Center returns current health data instead of an empty snapshot list.
 - **Site Health Filtering:** Added case-insensitive matching for `siteId` and support for filtering by `siteName`, `parentSiteId`, and `parentSiteName` (including child buildings under a selected area/campus).

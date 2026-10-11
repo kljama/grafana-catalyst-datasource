@@ -501,47 +501,44 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 	case "issues":
 		inst, err := getInstanceFromPluginContext(req.PluginContext)
 		if err != nil {
-			return sender.Send(&backend.CallResourceResponse{
-				Status: http.StatusInternalServerError,
-				Body:   []byte("failed to get instance settings: " + err.Error()),
-			})
+			return sendResourceError(sender, http.StatusInternalServerError, "failed to get instance settings: " + err.Error())
 		}
 		httpClient := d.httpClientFor(inst.Settings)
 		return d.resourceIssues(ctx, inst, req, sender, httpClient)
 	default:
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusNotFound,
-			Body:   []byte("not found"),
-		})
+		return sendResourceError(sender, http.StatusNotFound, "not found")
 	}
+}
+
+// sendResourceError answers a resource request with a JSON error body. Grafana
+// parses resource responses as JSON and shows the "message" field; a plain-text
+// body surfaces as "Unexpected token ... is not valid JSON" instead.
+func sendResourceError(sender backend.CallResourceResponseSender, status int, msg string) error {
+	body, _ := json.Marshal(map[string]string{"message": msg})
+	return sender.Send(&backend.CallResourceResponse{
+		Status:  status,
+		Body:    body,
+		Headers: map[string][]string{"Content-Type": {"application/json"}},
+	})
 }
 
 // handleSitesRequest fetches all sites using the translator and returns them as JSON.
 func (d *Datasource) handleSitesRequest(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	inst, err := getInstanceFromPluginContext(req.PluginContext)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusInternalServerError,
-			Body:   []byte("failed to get instance settings: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusInternalServerError, "failed to get instance settings: " + err.Error())
 	}
 	httpClient := d.httpClientFor(inst.Settings)
 	siteTranslator := d.getSiteTranslator(inst, httpClient)
 
 	sites, err := siteTranslator.GetAllSites(ctx)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusInternalServerError,
-			Body:   []byte("failed to fetch sites: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusBadGateway, "failed to fetch sites: " + err.Error())
 	}
 
 	body, err := json.Marshal(sites)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusInternalServerError,
-			Body:   []byte("failed to marshal sites to JSON: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusInternalServerError, "failed to marshal sites to JSON: " + err.Error())
 	}
 
 	return sender.Send(&backend.CallResourceResponse{
@@ -576,10 +573,7 @@ func clampPassthroughPaging(rawQuery string) string {
 func (d *Datasource) resourceIssues(ctx context.Context, inst *dsInstance, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender, httpClient *http.Client) error {
 	issuesURL, err := IssuesURL(inst.Settings.BaseURL)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusBadRequest,
-			Body:   []byte("bad baseUrl: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusBadRequest, "bad baseUrl: " + err.Error())
 	}
 
 	var rawQuery string
@@ -596,36 +590,24 @@ func (d *Datasource) resourceIssues(ctx context.Context, inst *dsInstance, req *
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, issuesURL+q, nil)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusInternalServerError,
-			Body:   []byte("failed to create request: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusInternalServerError, "failed to create request: " + err.Error())
 	}
 
 	tok, err := d.tm.getToken(ctx, inst.UID, inst.Settings, httpClient)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusUnauthorized,
-			Body:   []byte("token: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusBadGateway, "login to Catalyst Center failed: " + err.Error())
 	}
 	httpReq.Header.Set("X-Auth-Token", tok)
 
 	httpResp, err := httpClient.Do(httpReq)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusBadGateway,
-			Body:   []byte("request failed: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusBadGateway, "request failed: " + err.Error())
 	}
 	defer httpResp.Body.Close()
 
 	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return sender.Send(&backend.CallResourceResponse{
-			Status: http.StatusInternalServerError,
-			Body:   []byte("failed to read response: " + err.Error()),
-		})
+		return sendResourceError(sender, http.StatusInternalServerError, "failed to read response: " + err.Error())
 	}
 
 	return sender.Send(&backend.CallResourceResponse{

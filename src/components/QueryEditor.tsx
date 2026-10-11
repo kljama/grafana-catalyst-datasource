@@ -137,7 +137,10 @@ const QueryEditor: React.FC<Props> = ({ query, onChange, onRunQuery, datasource 
       return filteredSites;
     } catch (error) {
       console.error('Failed to load site options', error);
-      return [];
+      // Show the reason in the picker instead of an empty "No options found".
+      const err = error as { data?: { message?: string }; message?: string };
+      const reason = err?.data?.message ?? err?.message ?? String(error);
+      return [{ label: `Could not load sites: ${reason}`, value: '', isDisabled: true }];
     }
   };
 

@@ -594,3 +594,34 @@ func TestDatasource_CallResource_IssuesPagingClamped(t *testing.T) {
 		t.Fatalf("unexpected forwarded query: %v", q)
 	}
 }
+
+// TestDatasource_CallResource_SitesErrorIsJSON: Grafana parses resource bodies as
+// JSON. A plain-text error showed up as "Unexpected token 'i', "failed to fe"...
+// is not valid JSON" in the site picker.
+func TestDatasource_CallResource_SitesErrorIsJSON(t *testing.T) {
+	f := newFakeCC(t)
+	f.SetStatus(epSites, http.StatusBadGateway)
+
+	sender := &mockResourceSender{}
+	if err := NewDatasource().CallResource(context.Background(), &backend.CallResourceRequest{
+		Path:          "sites",
+		PluginContext: f.pluginContext("sites-error"),
+	}, sender); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sender.resp == nil || sender.resp.Status != http.StatusBadGateway {
+		t.Fatalf("expected 502, got: %+v", sender.resp)
+	}
+	var body struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(sender.resp.Body, &body); err != nil {
+		t.Fatalf("error body is not JSON: %v (%s)", err, sender.resp.Body)
+	}
+	if !strings.Contains(body.Message, "site endpoint returned 502") {
+		t.Fatalf("message does not name the cause: %q", body.Message)
+	}
+	if ct := sender.resp.Headers["Content-Type"]; len(ct) == 0 || ct[0] != "application/json" {
+		t.Fatalf("Content-Type = %v, want application/json", ct)
+	}
+}
