@@ -232,6 +232,16 @@ The total is about 30.5 developer-days, roughly 6–7 weeks for one developer.
 - `QueryEditor` renders with `siteId: ""` and `siteId: "uuid"`.
 - Rendering the output of `interpolateVariablesInQueries` does not throw.
 
+#### WP1.6 Site list and health check on 3.1.6 (pulled forward)
+**Fixes:** N1, part of M10 · **Effort:** 0.5 d · **Depends on:** WP0.1
+
+Reported on a real Catalyst Center 3.1.6: "Save & test" failed with `site endpoint returned 502 Bad Gateway` from the deprecated `GET /dna/intent/api/v2/site`. The core of WP3.6 and part of WP3.5 therefore move into 1.0.6.
+
+- [x] `SiteURL` uses `GET /dna/intent/api/v1/sites`; `Site` reads `nameHierarchy`, `type` and `siteHierarchyId` as well. The rest of WP3.6 (fetching outside the lock, hierarchy-based name lookup, extended `sites` resource) stays in 1.1.0.
+- [x] CheckHealth: the assurance issues API (`limit=1&offset=1`) decides pass or fail, and a 404 there reports "requires Catalyst Center 3.1.6 or later". A failing site list becomes a warning. The fresh login and the cache bypass of WP3.5 stay in 1.1.0.
+
+**Done when:** `TestCheckHealth_Catalyst316` (fake with `v2/site` answering 502) passes; on the previous code it fails with the reported error.
+
 #### WP1.5 Release 1.0.6
 **Effort:** 0.5 d · **Depends on:** WP1.1–WP1.4, WP0.4
 

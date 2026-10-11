@@ -438,19 +438,57 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 		}, nil
 	}
 
-	// 2. Perform a lightweight API call to the site translator to ensure connectivity.
+	// 2. Probe the assurance issues API: it is what every issue panel needs, so it
+	//    decides pass or fail.
+	if msg, ok := d.probeIssues(ctx, inst, httpClient); !ok {
+		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: msg}, nil
+	}
+
+	// 3. The site list only provides site names and the site picker. A failure is
+	//    reported as a warning, not as a failed check.
 	siteTranslator := d.getSiteTranslator(inst, httpClient)
 	if _, err := siteTranslator.GetAllSites(ctx); err != nil {
 		return &backend.CheckHealthResult{
-			Status:  backend.HealthStatusError,
-			Message: "Health check failed: could not fetch sites. " + err.Error(),
+			Status:  backend.HealthStatusOk,
+			Message: "Connected to Catalyst Center; the assurance issues API works. Warning: the site list is unavailable, so site names and the site picker will not work: " + err.Error(),
 		}, nil
 	}
 
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,
-		Message: "Successfully connected to Catalyst Center and fetched sites.",
+		Message: "Successfully connected to Catalyst Center: assurance issues and site list are available.",
 	}, nil
+}
+
+// probeIssues requests one assurance issue and returns a user-facing error
+// message if that fails.
+func (d *Datasource) probeIssues(ctx context.Context, inst *dsInstance, httpClient *http.Client) (string, bool) {
+	issuesURL, err := IssuesURL(inst.Settings.BaseURL)
+	if err != nil {
+		return "invalid base URL: " + err.Error(), false
+	}
+	tok, err := d.tm.getToken(ctx, inst.UID, inst.Settings, httpClient)
+	if err != nil {
+		return "token error: " + err.Error(), false
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, issuesURL+"?limit=1&offset=1", nil)
+	if err != nil {
+		return "failed to create request: " + err.Error(), false
+	}
+	req.Header.Set("X-Auth-Token", tok)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "assurance issues request failed: " + err.Error(), false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return "", true
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+	if resp.StatusCode == http.StatusNotFound {
+		return "The assurance issues API (/dna/data/api/v1/assuranceIssues) was not found. This plugin requires Catalyst Center 3.1.6 or later.", false
+	}
+	return fmt.Sprintf("assurance issues API returned %s: %s", resp.Status, strings.TrimSpace(string(body))), false
 }
 
 // ---- CallResource ----

@@ -414,7 +414,7 @@ func TestDatasource_CallResource_Sites(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"Token": "test-token"}`))
-		case "/dna/intent/api/v2/site":
+		case "/dna/intent/api/v1/sites":
 			if r.Header.Get("X-Auth-Token") != "test-token" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return

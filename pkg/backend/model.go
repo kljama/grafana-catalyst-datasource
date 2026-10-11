@@ -109,16 +109,18 @@ func IssuesURL(base string) (string, error) {
 	return u.String(), nil
 }
 
-// SiteURL constructs the full URL for the site lookup endpoint,
+// SiteURL constructs the full URL for the site list endpoint,
 // preserving any reverse proxy prefix.
-// It always points to <prefix>/dna/intent/api/v2/site.
+// It always points to <prefix>/dna/intent/api/v1/sites. The older
+// /dna/intent/api/v2/site is deprecated since Catalyst Center 2.3.7.6 and
+// answers 502 on 3.1.6 systems.
 func SiteURL(base string) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil {
 		return "", err
 	}
 	prefix := dnacPrefix(u.Path)
-	u.Path = prefix + "/dna/intent/api/v2/site"
+	u.Path = prefix + "/dna/intent/api/v1/sites"
 	u.RawQuery = ""
 	u.Fragment = ""
 	return u.String(), nil
@@ -286,9 +288,12 @@ type SiteEnvelope struct {
 	Response []Site `json:"response"`
 }
 
-// Site represents a single site returned from the Catalyst Center API.
+// Site represents a single site returned by GET /dna/intent/api/v1/sites.
 type Site struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	ParentID string `json:"parentId,omitempty"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	ParentID        string `json:"parentId,omitempty"`
+	NameHierarchy   string `json:"nameHierarchy,omitempty"`   // e.g. Global/USA/San Jose/Building1
+	Type            string `json:"type,omitempty"`            // global, area, building, floor
+	SiteHierarchyID string `json:"siteHierarchyId,omitempty"` // site IDs from Global down to this site, joined by "/"
 }
